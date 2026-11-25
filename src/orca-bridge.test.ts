@@ -1,7 +1,8 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { assert, test } from 'orca/testing'
+import { test } from 'node:test'
+import { assert } from 'orca/testing'
 import {
   dispatchToOrcaBotAndWait,
   getOrcaBinary,

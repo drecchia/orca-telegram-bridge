@@ -1,5 +1,6 @@
 import http from 'node:http'
 import https from 'node:https'
+import type { Duplex } from 'node:stream'
 import tls from 'node:tls'
 import { URL } from 'node:url'
 
@@ -317,8 +318,8 @@ export function createProxyAgent(
   class HttpConnectAgent extends https.Agent {
     createConnection(
       options: https.RequestOptions,
-      callback: (err: Error | null, socket?: tls.TLSSocket) => void
-    ): void {
+      callback?: (err: Error | null, stream: Duplex) => void
+    ): undefined {
       const targetHost = options.host || 'api.telegram.org'
       const targetPort = Number(options.port || 443)
       const headers: Record<string, string> = {
@@ -342,7 +343,8 @@ export function createProxyAgent(
         settled = true
         clearTimeout(timer)
         signal?.removeEventListener('abort', onAbort)
-        callback(err, socket)
+        // @types/node always types a stream; with an error Node's own agents pass none either.
+        callback?.(err, socket as Duplex)
       }
 
       // The outer request's setTimeout only starts once this callback hands it a socket, so a proxy

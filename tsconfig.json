@@ -1,5 +1,8 @@
 {
   "extends": "./.orca/types/tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM"]
+  },
   "include": [
     "src"
   ]

@@ -1,7 +1,8 @@
 import http from 'node:http'
 import https from 'node:https'
 import net from 'node:net'
-import { assert, test } from 'orca/testing'
+import { test } from 'node:test'
+import { assert } from 'orca/testing'
 import { createTelegramClient, splitTelegramMessage, TelegramApiError } from './telegram-api'
 
 // Self-signed test-only certificate for api.telegram.org; trusted only via NODE_TLS_REJECT_UNAUTHORIZED below.
@@ -86,8 +87,11 @@ test('a connection dropped mid-body rejects instead of hanging', { timeout: 5000
       res.write('{"ok":true,"result":', () => res.socket?.destroy())
     },
     async (proxyUrl) => {
-      await assert.rejects(client.getMe(TOKEN, { proxyUrl, timeoutMs: 3000 }), TelegramApiError)
-      await assert.rejects(client.downloadFile(TOKEN, 'photos/a.jpg', { proxyUrl, timeoutMs: 3000 }), TelegramApiError)
+      await assert.rejects(client.getMe(TOKEN, { proxyUrl, timeoutMs: 3000 }), (err) => err instanceof TelegramApiError)
+      await assert.rejects(
+        client.downloadFile(TOKEN, 'photos/a.jpg', { proxyUrl, timeoutMs: 3000 }),
+        (err) => err instanceof TelegramApiError
+      )
     }
   )
 })
