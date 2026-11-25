@@ -1,0 +1,20 @@
+# Keeps the GitHub Actions used here up to date. The plugin has no npm dependencies.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/*
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      # All action bumps in one PR a week; security fixes in their own.
+      github-actions:
+        applies-to: version-updates
+        patterns:
+          - '*'
+      github-actions-security:
+        applies-to: security-updates
+        patterns:
+          - '*'

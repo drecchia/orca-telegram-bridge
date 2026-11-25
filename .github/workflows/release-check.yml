@@ -1,0 +1,39 @@
+name: Release check
+
+# A vX.Y.Z tag must match "version" in orca-plugin.json, and its tests must pass: Orca installs that
+# tag as it is. release.yml calls this for the tags release-please creates; a tag pushed by hand
+# starts it on its own.
+on:
+  push:
+    tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag to check (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Tag matches version, tests pass
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+
+      - name: Tag matches orca-plugin.json version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          TAG="${RELEASE_TAG#v}"
+          VERSION="$(node -p "require('./orca-plugin.json').version")"
+          test "$TAG" = "$VERSION" || { echo "tag $TAG != orca-plugin.json $VERSION"; exit 1; }
+
+      - uses: ./.github/actions/setup-orca
+      - run: orca-ide plugin test . --json

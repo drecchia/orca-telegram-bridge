@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+# Fake secrets the tests need; a real one in the same files is still caught.
+[[allowlists]]
+description = "Fixture secrets in tests"
+condition = "AND"
+paths = ['''^src/[^/]+\.test\.tsx?$''']
+regexes = [
+  # Self-signed test-only certificate key for api.telegram.org (telegram-api.test.ts).
+  '''^-----BEGIN PRIVATE KEY-----\s+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg57BFix2QIXofeBwK''',
+  '''^sk-test-SECRETKEY987654321$''',
+  '''^sk-or-v1-VOICEKEY0123456789abcdef$''',
+]

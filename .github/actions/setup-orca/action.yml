@@ -1,0 +1,24 @@
+name: Set up Orca CLI
+description: Installs Node and the Orca CLI (`orca-ide`). Only the CLI brings the `orca/testing` kit and the plugin typings.
+
+inputs:
+  version:
+    description: Orca release tag (github.com/stablyai/orca)
+    default: v1.4.274
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    - name: Install Orca CLI
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ORCA_VERSION: ${{ inputs.version }}
+      run: |
+        gh release download "$ORCA_VERSION" --repo stablyai/orca --pattern 'orca-ide_*_amd64.deb' --dir "$RUNNER_TEMP"
+        sudo apt-get update
+        sudo apt-get install -y "$RUNNER_TEMP"/orca-ide_*_amd64.deb

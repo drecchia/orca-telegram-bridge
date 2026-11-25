@@ -39,7 +39,7 @@ The manifest already has everything the directory needs. Do not change these fie
 
 For each release:
 
-1. **Version**: bump `"version"`. The Git tag must be `v<version>` (e.g. `"version": "1.2.3"` → tag `v1.2.3`). Once a version is listed, its commit and `contentHash` are permanent; a moved tag does not replace it. Always bump `version` for the next release.
+1. **Version**: do not bump `"version"` by hand; release-please does it (see [4. Release on GitHub](#4-release-on-github)). The Git tag is `v<version>` (e.g. `"version": "1.2.3"` → tag `v1.2.3`). Once a version is listed, its commit and `contentHash` are permanent; a moved tag does not replace it.
 2. **Optional store artwork**:
    - `cover`: 16:10 image (recommended `1600x1000`, minimum `800x500`, max `1024 KB`, PNG/JPEG/WEBP, static) with `alt`.
    - `screenshots`: up to 6 images (minimum `1280x800`, max `1536 KB` each, static) with `alt`.
@@ -57,11 +57,13 @@ orca plugin check . --json
 orca plugin release-entry . --json
 ```
 
-If TypeScript is installed locally, also run:
+Then type-check `src/` (it needs Node and npm; it fetches TypeScript and `@types/node` into a temp folder, and writes the Orca typings into `.orca/types`). On Linux, prefix it with `ORCA=orca-ide`:
 
 ```sh
-npx tsc -p . --noEmit
+.github/scripts/typecheck.sh
 ```
+
+CI (`.github/workflows/ci.yml`) runs the unit tests, this typecheck and a gitleaks scan of the whole history on every PR and every push to `main`. Fake secrets the tests need are allowed in `.gitleaks.toml`, matched by their exact value. A PR that changes `src/` also needs a change in `README.md`, `PUBLISHING.md`, `specs/` or `docs/`, or the `sem-doc` label (`.github/workflows/doc-check.yml`).
 
 ---
 
@@ -69,23 +71,18 @@ npx tsc -p . --noEmit
 
 The repository is `https://github.com/drecchia/orca-telegram-bridge` (public, remote `origin`).
 
-1. Commit the version bump, then push `main`:
-   ```sh
-   git push origin main
-   ```
-2. Add the `orca-plugin` repository topic (needed for the directory to look at the repository at all):
+Releases come from [release-please](https://github.com/googleapis/release-please) (`.github/workflows/release.yml`), from the [Conventional Commits](https://www.conventionalcommits.org/) on `main`: `fix:` bumps the patch, `feat:` the minor, and a breaking change (`feat!:`) also only the minor while the version is `0.x`.
+
+1. After CI passes on `main`, release-please opens or updates the release PR `chore(main): release X.Y.Z`. It changes `"version"` in `orca-plugin.json`, `.release-please-manifest.json` and `CHANGELOG.md`. CI does not run on that PR: GitHub starts no workflows for a PR made with `GITHUB_TOKEN`. Its code is `main`, which CI already tested.
+2. Merge the release PR. Once CI passes on that merge, release-please creates the tag `vX.Y.Z` and its GitHub Release. `orca plugin install drecchia/orca-telegram-bridge` (no version) now installs this tag, because Orca picks the newest `vX.Y.Z` tag.
+3. The release check (`.github/workflows/release-check.yml`) then checks that the tag matches `"version"` and runs the tests on the tag. A failure there means the tag is already public: fix it on `main` and release the next version.
+4. The repository needs the `orca-plugin` topic (needed for the directory to look at the repository at all), once:
    ```sh
    gh repo edit drecchia/orca-telegram-bridge --add-topic orca-plugin
    ```
-3. Create and push an annotated tag equal to `v` + `version` in `orca-plugin.json` (replace `X.Y.Z`):
-   ```sh
-   git tag -a vX.Y.Z -m vX.Y.Z
-   git push origin vX.Y.Z
-   ```
-   `orca plugin install drecchia/orca-telegram-bridge` (no version) now installs this tag, because Orca picks the newest `vX.Y.Z` tag.
-4. Test the install from the tag. If this folder is loaded as a development plugin, run `orca plugin dev unload .` first. A dev folder overrides an install with the same key.
+5. Test the install from the tag. If this folder is loaded as a development plugin, run `orca plugin dev unload .` first. A dev folder overrides an install with the same key.
    ```sh
    orca plugin install drecchia/orca-telegram-bridge@vX.Y.Z
    ```
-   It stops with `approval_required` (exit code `3`). Check the listed access, publisher and repository, then run the printed `--approve <fingerprint>` command.
-5. Check the listing status (usually updates within an hour): `https://orca.dev/plugins/drecchia/orca-telegram-bridge`. While the repository is a fork, it stays unlisted (see the blocker at the top). Once listed, `orca plugin install drecchia.telegram-bridge` works too.
+   A new version that asks for new access stops with `approval_required` (exit code `3`). Check the listed access, publisher and repository, then run the printed `--approve <fingerprint>` command.
+6. Check the listing status (usually updates within an hour): `https://orca.dev/plugins/drecchia/orca-telegram-bridge`. While the repository is a fork, it stays unlisted (see the blocker at the top). Once listed, `orca plugin install drecchia.telegram-bridge` works too.

@@ -1,0 +1,29 @@
+name: Doc check
+
+# A PR that changes src/ must change README.md, PUBLISHING.md, specs/ or docs/. The `sem-doc` label
+# waives it; labeled/unlabeled run the check again without a new push.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  doc-check:
+    name: Doc check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Event values go in through env, never into the script text.
+      - name: Check doc update
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SEM_DOC_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'sem-doc') }}
+        run: git diff --name-only "$BASE_SHA...$HEAD_SHA" | node .github/scripts/doc-check.js

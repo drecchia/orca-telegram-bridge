@@ -1,0 +1,43 @@
+name: Release
+
+# release-please keeps a release PR open against main: the next version in orca-plugin.json and
+# CHANGELOG.md, from the Conventional Commits since the last release. Merging it creates the tag
+# vX.Y.Z and the GitHub Release; Orca installs the newest vX.Y.Z tag.
+#
+# It runs only after CI passed on main. A tag created with GITHUB_TOKEN does not start
+# `push: tags` workflows, so the release check is called here explicitly.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    name: Release PR / tag
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # release PR commits, tag and GitHub Release
+      pull-requests: write # open and update the release PR
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  release-check:
+    name: Release check
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    uses: ./.github/workflows/release-check.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
