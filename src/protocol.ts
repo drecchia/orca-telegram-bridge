@@ -48,8 +48,9 @@ export type BotSummary = {
 export type GroupMode = 'addressed' | 'all'
 
 // With groupMode 'all', what the bot does with a message not addressed to it: stay silent (the
-// message only gives it context), or answer when it can clearly help (else NO_REPLY).
-export type GroupReply = 'mentioned' | 'helpful'
+// message only gives it context), or answer when it can clearly help (else NO_REPLY). 'learn' reads
+// every message to learn from it and never answers in the group, not even when called.
+export type GroupReply = 'mentioned' | 'helpful' | 'learn'
 
 // Where voice messages are transcribed; both speak OpenAI's /audio/transcriptions API.
 export type VoiceProvider = 'openrouter' | 'openai'

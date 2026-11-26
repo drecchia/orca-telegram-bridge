@@ -3854,6 +3854,102 @@ test("'all': a message addressed to the bot is answered as before, in both reply
   }
 })
 
+const LEARN_LINE =
+  'You are in learning mode in this Telegram group: read this message and learn from it as your instructions (SOUL.md) say. Never reply, even when the message mentions or asks you: answer exactly NO_REPLY. Nothing you write is sent to Telegram.'
+const LEARNING = { allowGroups: true, groupMode: 'all', groupReply: 'learn', allowedUserIds: '777888' }
+
+test("'all' + learn: every line reaches the bot to learn from, even when called, and nothing is posted in the group", async () => {
+  await withGroupBridge(LEARNING, async (controller, deps, manager) => {
+    const reply = { message_id: 90, from: BOT_USER, chat: { id: GROUP_ID, type: 'supergroup' as const, title: 'Team' }, date: 999 }
+    await within(controller.handleIncomingUpdate(groupUpdate(1, 777888, 'the deploy failed again')), 'plain line')
+    await within(controller.handleIncomingUpdate(groupUpdate(2, 777888, '@demo_orca_bot what is due today?')), 'mention')
+    await within(controller.handleIncomingUpdate(groupUpdate(3, 777888, 'and this?', { reply_to_message: reply })), 'reply')
+    assert.equal(deps.sentToBots.length, 3)
+    for (const sent of deps.sentToBots) {
+      assert.ok(sent.body.includes(LEARN_LINE))
+      assert.equal(sent.body.includes('To send an image or file'), false)
+    }
+    assert.equal(lastBodyLine(deps), 'and this?')
+    assert.ok(deps.sentToBots[1].body.includes('what is due today?'))
+    // The mock bot answers every line; the bridge keeps all of it out of the group.
+    assert.deepEqual(groupMessages(deps), [])
+    assert.equal(typed(deps), false)
+    assert.ok(manager.getState().logs.some((e) => /in 'learn' mode: reply of \d+ chars not sent\.$/.test(e.message)))
+
+    // A command is neither run nor sent on; a stranger calling the bot is not told off.
+    await controller.handleIncomingUpdate(groupUpdate(4, 777888, '/status'))
+    await controller.handleIncomingUpdate(groupUpdate(5, 777888, '/new@demo_orca_bot'))
+    await controller.handleIncomingUpdate(groupUpdate(6, 555, '@demo_orca_bot hello'))
+    assert.equal(deps.sentToBots.length, 3)
+    assert.deepEqual(deps.sentMessages, [])
+    assert.equal(controller.view().lastBlockedUserId, null)
+  })
+})
+
+test("'all' + learn: a button on an older group message does nothing", async () => {
+  await withGroupBridge(LEARNING, async (controller, deps) => {
+    await controller.handleIncomingUpdate(buttonUpdate(1, 777888, GROUP_ID, 'n:new'))
+    assert.deepEqual(deps.sentMessages, [])
+    assert.deepEqual(deps.answeredCallbacks, [])
+    assert.equal(deps.sentToBots.length, 0)
+  })
+})
+
+test("'all' + learn: Orca-side sync skips the group's chat and still serves private chats", async () => {
+  let activity = 1000
+  const sessions: Record<string, OrcaSessionRead> = {
+    'orca-group': { orcaSessionId: 'orca-group', state: 'done', entries: [{ kind: 'message', role: 'assistant', text: 'Old reply' }] },
+    'orca-private': { orcaSessionId: 'orca-private', state: 'done', entries: [{ kind: 'message', role: 'assistant', text: 'Old reply' }] }
+  }
+  const chat = (id: string) => ({
+    id,
+    title: id,
+    lastActivityAt: activity,
+    lastAsked: null,
+    lastSaid: null,
+    home: false,
+    self: false,
+    closed: false
+  })
+  const host = bridgesHost([
+    {
+      id: 'b-learn001',
+      token: '123456:TEST_TOKEN',
+      config: { ...LEARNING, allowedUserIds: `777888, ${GROUP_ID}`, syncOrcaOutbound: true },
+      state: {
+        bindings: [
+          { tgChatId: String(GROUP_ID), botId: 'bot-1', botName: 'Assistant', orcaChatId: 'orca-group', updatedAt: 1000 },
+          { tgChatId: '777888', botId: 'bot-1', botName: 'Assistant', orcaChatId: 'orca-private', updatedAt: 1000 }
+        ]
+      }
+    }
+  ])
+  const deps = makeMockDeps({
+    orcaCli: {
+      async listBotChats() {
+        return [chat('orca-group'), chat('orca-private')]
+      },
+      async readSession(sessionId) {
+        const session = sessions[sessionId]
+        return { ...session, entries: [...session.entries] }
+      }
+    }
+  })
+  const { controller, worker } = await mountController(host, { telegram: deps.telegram, orcaCli: deps.orcaCli })
+  try {
+    await controller.syncOrcaBoundChatsOnce()
+    activity = 2000
+    for (const session of Object.values(sessions)) {
+      session.entries.push({ kind: 'message', role: 'user', text: 'Typed in Orca' })
+    }
+    await controller.syncOrcaBoundChatsOnce()
+    assert.deepEqual(deps.sentMessages.map((m) => String(m.chatId)), ['777888'])
+  } finally {
+    await controller.dispose()
+    await worker.deactivate()
+  }
+})
+
 test('Telegram caps come from getMe, are null before it, and reset with a new token', async () => {
   const host = bridgesHost([{ id: 'b-caps0001', token: '123456:TEST_TOKEN' }])
   const deps = makeMockDeps({
@@ -3920,6 +4016,9 @@ test('a save without a name keeps it; groupReply defaults to mentioned, round-tr
 
     await worker.request('bridge.saveConfig', saveInput(controller, { groupReply: 'mentioned' }))
     assert.equal(controller.view().config.groupReply, 'mentioned')
+    await worker.request('bridge.saveConfig', saveInput(controller, { groupReply: 'learn' }))
+    assert.equal(controller.view().config.groupReply, 'learn')
+    assert.equal((host.data().storage.bridges as { groupReply: string }[])[0].groupReply, 'learn')
     assert.deepEqual(worker.refusals, [])
   } finally {
     await worker.deactivate()

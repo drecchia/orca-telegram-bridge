@@ -155,7 +155,7 @@ const NEEDS_ID = 'Add at least one Telegram ID, or choose Anyone on Telegram.'
 const REVIEW_ROLES = 'After the update everyone on the list kept full access. Review their roles.'
 const PROMPT_HELPER = 'A hint to the bot, not a lock: only the checkboxes above are enforced. People never see it.'
 const ALL_NEEDS_IDS =
-  'Following the conversation works only with "Only these people and groups". While anyone can talk, the bot reads only messages for it.'
+  'Following the conversation works only with "Only these people and groups". While anyone can talk, the bot reads only messages for it, and nothing while learning.'
 
 const LOG_FILTERS: Array<{ value: LogFilter; label: string }> = [
   { value: 'all', label: 'All levels' },
@@ -222,7 +222,7 @@ const RUN_SCOPE_OPTIONS = [
 ]
 // One choice says both what the bot reads in a group and when it answers; it maps to allowGroups,
 // groupMode and groupReply.
-type GroupBehavior = 'off' | 'addressed' | 'all-mentioned' | 'all-helpful'
+type GroupBehavior = 'off' | 'addressed' | 'all-mentioned' | 'all-helpful' | 'all-learn'
 const GROUP_OPTIONS: Array<{ value: GroupBehavior; label: string; description: string }> = [
   { value: 'off', label: 'Off', description: 'The bot ignores groups and leaves any group it is added to.' },
   {
@@ -242,6 +242,12 @@ const GROUP_OPTIONS: Array<{ value: GroupBehavior; label: string; description: s
     label: 'Follows the conversation, joins in when useful',
     description:
       'Reads every message. Answers when called, and on its own when it can clearly help; otherwise stays silent.'
+  },
+  {
+    value: 'all-learn',
+    label: 'Learns from the conversation, never answers',
+    description:
+      "Reads every message to learn from it, as the Orca bot's SOUL.md says. Never answers in the group, not even when called; commands and buttons there do nothing."
   }
 ]
 
@@ -823,7 +829,12 @@ function groupsSummary(bridge: BridgeView, openToEveryone: boolean): string {
   const behavior = groupBehavior(allowGroups, groupMode, groupReply)
   if (behavior === 'off') return 'Groups: off'
   if (behavior === 'addressed') return 'Groups: answers when called'
-  if (openToEveryone) return 'Groups: answers when called (following the conversation needs an ID list)'
+  if (openToEveryone) {
+    return behavior === 'all-learn'
+      ? 'Groups: reads nothing (learning needs an ID list)'
+      : 'Groups: answers when called (following the conversation needs an ID list)'
+  }
+  if (behavior === 'all-learn') return 'Groups: learns from the conversation, never answers'
   return behavior === 'all-helpful'
     ? 'Groups: follows the conversation, joins in when useful'
     : 'Groups: follows the conversation, answers when called'
@@ -1247,7 +1258,7 @@ function bridgeEditor(bridge: BridgeView, botName: string, isBusy: boolean, conf
   const accessMode = read(accessModeDraft)
   const idsError = read(allowedIdsError)
   const groupChoice = groupBehavior(read(allowGroupsDraft), read(groupModeDraft), read(groupReplyDraft))
-  const followsAll = groupChoice === 'all-mentioned' || groupChoice === 'all-helpful'
+  const followsAll = groupChoice.startsWith('all-')
   const voiceOn = read(voiceEnabledDraft)
   const voiceProvider = read(voiceProviderDraft)
 
@@ -1315,9 +1326,9 @@ function bridgeEditor(bridge: BridgeView, botName: string, isBusy: boolean, conf
               const choice = v as GroupBehavior
               edit(allowGroupsDraft, choice !== 'off')
               if (choice === 'addressed') edit(groupModeDraft, 'addressed')
-              if (choice === 'all-mentioned' || choice === 'all-helpful') {
+              if (choice === 'all-mentioned' || choice === 'all-helpful' || choice === 'all-learn') {
                 edit(groupModeDraft, 'all')
-                edit(groupReplyDraft, choice === 'all-helpful' ? 'helpful' : 'mentioned')
+                edit(groupReplyDraft, choice === 'all-helpful' ? 'helpful' : choice === 'all-learn' ? 'learn' : 'mentioned')
               }
             }}
           />

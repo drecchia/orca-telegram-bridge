@@ -1417,13 +1417,21 @@ test('one group choice says what the bot reads and when it answers, and Save map
   await view.select(groups, 'all-mentioned')
   await view.press({ text: 'Save' })
   assert.deepEqual([saved[2].allowGroups, saved[2].groupMode, saved[2].groupReply], [true, 'all', 'mentioned'])
+
+  await openEditor(view, 'b1')
+  await view.select(groups, 'all-learn')
+  assert.ok(view.find({ text: /one bot turn per message/ }))
+  await view.press({ text: 'Save' })
+  assert.deepEqual([saved[3].allowGroups, saved[3].groupMode, saved[3].groupReply], [true, 'all', 'learn'])
+  await openEditor(view, 'b1')
+  assert.equal(view.valueOf(groups), 'all-learn')
   assert.deepEqual(view.errors, [])
   assert.deepEqual(view.warnings, [])
   await view.unmount()
 })
 
 test('each bridge card says how it reads groups', async () => {
-  // One bridge per Orca bot, so each bot's view shows one of the five group setups.
+  // One bridge per Orca bot, so each bot's view shows one of the group setups.
   const setups: Array<{ bot: string; config: Partial<BridgeConfig>; summary: string }> = [
     { bot: 'Off', config: {}, summary: 'Groups: off' },
     { bot: 'Addressed', config: { allowGroups: true }, summary: 'Groups: answers when called' },
@@ -1441,6 +1449,16 @@ test('each bridge card says how it reads groups', async () => {
       bot: 'Open',
       config: { allowGroups: true, groupMode: 'all', allowedUserIds: '' },
       summary: 'Groups: answers when called (following the conversation needs an ID list)'
+    },
+    {
+      bot: 'Learn',
+      config: { allowGroups: true, groupMode: 'all', groupReply: 'learn' },
+      summary: 'Groups: learns from the conversation, never answers'
+    },
+    {
+      bot: 'OpenLearn',
+      config: { allowGroups: true, groupMode: 'all', groupReply: 'learn', allowedUserIds: '' },
+      summary: 'Groups: reads nothing (learning needs an ID list)'
     }
   ]
   const state = makeState({

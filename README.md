@@ -211,8 +211,11 @@ Groups are off for a new bridge. Choose per bridge in the Setup tab → the brid
 | **Answers when called** | only messages that call it; other messages never reach the Orca bot | each message that calls it |
 | **Follows the conversation, answers when called** | every message, as context | only when called |
 | **Follows the conversation, joins in when useful** | every message | when called, and on its own when it can clearly help; otherwise it stays silent (`NO_REPLY`) |
+| **Learns from the conversation, never answers** | every message, to learn from it as the Orca bot's `SOUL.md` says | never, not even when called |
 
-The mention is removed before the text goes to the Orca bot. With the two **Follows the conversation** options, each group message starts one Orca bot turn, so a busy group costs more. Messages that do not call the bot never get a typing indicator or an error line in the group; problems go to the Logs tab. These two options work only with **Only these people and groups**; while the bridge is open to everyone, the bot reads only messages that call it, so strangers in a busy group cannot start an Orca run with every line.
+**Learns from the conversation, never answers** posts nothing in the group: no answer, typing indicator, working line or error line. An `@mention` or a reply to the bot is read like any other line. Commands for the bot are not run and do not reach the Orca bot; buttons on older bot messages in the group do nothing. Orca-side sync skips the group's chat (private chats still sync). What the bot learns, and where it keeps it, is up to the Orca bot's `SOUL.md`.
+
+The mention is removed before the text goes to the Orca bot. With the three options that read every message, each group message starts one Orca bot turn, so a busy group costs more. Messages that do not call the bot never get a typing indicator or an error line in the group; problems go to the Logs tab. These options work only with **Only these people and groups**; while the bridge is open to everyone, the bot reads only messages that call it (and nothing in learning mode), so strangers in a busy group cannot start an Orca run with every line.
 
 A bridge updated from 0.4.0 or older starts with **Answers when called**, the behavior it had before. A bridge that used **All messages** and was last saved before 0.8.0 starts with **Follows the conversation, joins in when useful**, so it keeps answering in the group. A bridge saved on 0.8.0 keeps the reply choice it saved then.
 

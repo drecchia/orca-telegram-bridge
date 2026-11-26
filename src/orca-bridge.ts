@@ -730,12 +730,14 @@ function findRequestReply(
 }
 
 // The reply rule for a group message not addressed to the bot (groupMode 'all'); it replaces the
-// usual "will be sent back" line.
+// usual "will be sent back" line. In learning mode every group message gets it.
 const UNADDRESSED_GROUP_LINES: Record<GroupReply, string> = {
   mentioned:
     'This group message was not addressed to you. Read it for context only and do not reply: answer exactly NO_REPLY. Nothing you write is sent to Telegram.',
   helpful:
-    'This group message was not addressed to you. Reply only if you can clearly help with it; otherwise answer exactly NO_REPLY. A reply is sent back to the group (use standard Markdown tables; avoid wide ASCII box tables).'
+    'This group message was not addressed to you. Reply only if you can clearly help with it; otherwise answer exactly NO_REPLY. A reply is sent back to the group (use standard Markdown tables; avoid wide ASCII box tables).',
+  learn:
+    'You are in learning mode in this Telegram group: read this message and learn from it as your instructions (SOUL.md) say. Never reply, even when the message mentions or asks you: answer exactly NO_REPLY. Nothing you write is sent to Telegram.'
 }
 
 export async function dispatchToOrcaBotAndWait(
@@ -786,6 +788,8 @@ export async function dispatchToOrcaBotAndWait(
   const subject = targetChatId === 'new' ? `Telegram: ${preview}` : `Telegram reply: ${preview}`
   const requestMarker = `[tg:${params.tgChatId}:${Date.now()}]`
   const groupReply = params.unaddressedGroupReply
+  // Nothing goes back to the group, so no attachment syntax or answer language.
+  const silent = groupReply === 'mentioned' || groupReply === 'learn'
   const bodyParts = [
     // Not "owner": with open access and groups the sender can be anyone, and the Orca bot must not
     // give them the owner's trust.
@@ -795,14 +799,13 @@ export async function dispatchToOrcaBotAndWait(
     groupReply
       ? UNADDRESSED_GROUP_LINES[groupReply]
       : 'Reply directly in this chat; your final message will be sent back to Telegram (use standard Markdown tables; avoid wide ASCII box tables).',
-    // Nothing goes back for a context-only message, so it does not need the attachment syntax.
-    ...(groupReply === 'mentioned'
+    ...(silent
       ? []
       : [
           'To send an image or file to the Telegram user, put it on its own line as Markdown ![short caption](absolute local path or https URL); wrap a path with spaces in <>. Images: PNG, JPEG, GIF, WEBP (up to 10 MB). Documents: PDF, CSV, TSV, TXT, MD and Office/OpenDocument files (up to 50 MB).'
         ])
   ]
-  if (params.answerLanguage && groupReply !== 'mentioned') {
+  if (params.answerLanguage && !silent) {
     bodyParts.push(
       `Answer in the language of the user's message; when it has no words (only an image or a file), answer in ${params.answerLanguage}.`
     )

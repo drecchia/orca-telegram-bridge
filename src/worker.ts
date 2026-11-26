@@ -623,7 +623,7 @@ function readStoredBridge(raw: Record<string, unknown>, id: string, fallbackName
     groupMode: raw.groupMode === 'all' ? 'all' : 'addressed',
     // Before 0.8.0, 'all' answered every group message; such a bridge keeps answering ('helpful').
     groupReply:
-      raw.groupReply === 'helpful' || raw.groupReply === 'mentioned'
+      raw.groupReply === 'helpful' || raw.groupReply === 'mentioned' || raw.groupReply === 'learn'
         ? raw.groupReply
         : raw.groupMode === 'all'
           ? 'helpful'
@@ -1041,7 +1041,11 @@ export class BridgeRuntime {
       allowGroups: input.allowGroups ?? prev.allowGroups,
       groupMode: input.groupMode === undefined ? prev.groupMode : input.groupMode === 'all' ? 'all' : 'addressed',
       groupReply:
-        input.groupReply === undefined ? prev.groupReply : input.groupReply === 'helpful' ? 'helpful' : 'mentioned',
+        input.groupReply === undefined
+          ? prev.groupReply
+          : input.groupReply === 'helpful' || input.groupReply === 'learn'
+            ? input.groupReply
+            : 'mentioned',
       voiceEnabled: input.voiceEnabled ?? prev.voiceEnabled,
       voiceProvider:
         input.voiceProvider === undefined ? prev.voiceProvider : input.voiceProvider === 'openai' ? 'openai' : 'openrouter',
@@ -1276,7 +1280,9 @@ export class BridgeRuntime {
       await this.appendLog(
         'debug',
         'bridge',
-        `Ignored message ${msg.message_id} in group ${tgChatId}: not a command, mention or reply to the bot.`
+        this.learnsInGroups()
+          ? `Ignored message ${msg.message_id} in group ${tgChatId}: learning mode reads only conversation lines, and only with an ID list.`
+          : `Ignored message ${msg.message_id} in group ${tgChatId}: not a command, mention or reply to the bot.`
       )
       return null
     }
@@ -1386,6 +1392,11 @@ export class BridgeRuntime {
     // A button on an old group message must not act while groups are off.
     if (cq.message && isGroupChat(cq.message.chat) && !this.config.allowGroups) {
       if (!this.leftGroups.has(tgChatId)) await this.leaveGroup(cq.message.chat, 'debug')
+      return null
+    }
+    // Learning mode never answers in a group, so a button on an older message there does nothing.
+    if (cq.message && isGroupChat(cq.message.chat) && this.learnsInGroups()) {
+      await this.appendLog('debug', 'bridge', `Ignored button in group ${tgChatId}: learning mode never answers there.`)
       return null
     }
     const allowed = parseAllowedIds(this.config.allowedUserIds)
@@ -1766,15 +1777,24 @@ export class BridgeRuntime {
     if (level === 'info') this.emitState()
   }
 
+  // Learning mode: groupMode 'all' that never answers in a group, not even when called.
+  private learnsInGroups(): boolean {
+    return this.config.groupMode === 'all' && this.config.groupReply === 'learn'
+  }
+
   // In groups the bot answers commands for it, mentions of @botUsername and replies to its own
   // messages. In 'all' mode it also reads every other line, but only while the allowlist is
-  // restricted: in an open bridge every stranger's line would start an Orca run. Returns the text to
+  // restricted: in an open bridge every stranger's line would start an Orca run. Learning mode
+  // runs no command and treats mentions and replies like any other line. Returns the text to
   // process (mention removed) and whether it was addressed to the bot, or null to ignore it.
   private groupMessageText(msg: TelegramMessage, hasMedia: boolean): { text: string; addressed: boolean } | null {
     const username = this.botUsername
     if (!username) return null
+    const learning = this.learnsInGroups()
     const raw = (msg.text ?? msg.caption ?? '').trim()
     if (!hasMedia && raw.startsWith('/')) {
+      // A command always answers, so learning mode runs none.
+      if (learning) return null
       const rawCmd = raw.split(/\s+/)[0]
       const at = rawCmd.indexOf('@')
       // '/cmd@other_bot' is for another bot in the same group.
@@ -1785,7 +1805,7 @@ export class BridgeRuntime {
     const { mentioned, text } = stripBotMention(msg, username)
     const replyToBot =
       this.botUserId !== null && msg.reply_to_message?.from?.id === this.botUserId
-    if (mentioned || replyToBot) return { text, addressed: true }
+    if ((mentioned || replyToBot) && !learning) return { text, addressed: true }
     const readsAll = this.config.groupMode === 'all' && parseAllowedIds(this.config.allowedUserIds).size > 0
     return readsAll ? { text, addressed: false } : null
   }
@@ -1908,8 +1928,8 @@ export class BridgeRuntime {
 
       // Orca's NO_REPLY: the bot has nothing to report, so Telegram gets nothing either.
       const replyWords = withoutQuietMarker(result.replyText)
-      // 'mentioned' is enforced here too: the bot may answer an unaddressed line anyway.
-      const withheld = unaddressed && this.config.groupReply === 'mentioned' && replyWords !== null
+      // 'mentioned' and 'learn' are enforced here too: the bot may answer an unaddressed line anyway.
+      const withheld = unaddressed && this.config.groupReply !== 'helpful' && replyWords !== null
       const delivery =
         replyWords === null || withheld
           ? { messageCount: 0, imageCount: 0, attachmentCount: 0 }
@@ -1936,7 +1956,7 @@ export class BridgeRuntime {
         replyWords === null
           ? `[${binding.botName} -> TG ${tgChatId}] Answered NO_REPLY: nothing sent.`
           : withheld
-          ? `[${binding.botName} -> TG ${tgChatId}] Unaddressed group message in 'mentioned' mode: reply of ${replyWords.length} chars not sent.`
+          ? `[${binding.botName} -> TG ${tgChatId}] Unaddressed group message in '${this.config.groupReply}' mode: reply of ${replyWords.length} chars not sent.`
           : `[${binding.botName} -> TG ${tgChatId}] Sent ${delivery.messageCount} message(s)${
               delivery.imageCount > 0 ? ` + ${delivery.imageCount} table image(s)` : ''
             }${delivery.attachmentCount > 0 ? ` + ${delivery.attachmentCount} attachment(s)` : ''}.`
@@ -3338,11 +3358,12 @@ export class BridgeRuntime {
     if (allowed.size === 0) return
 
     // Sync only to chats whose Telegram user (or group) is still on the allowlist, and to groups
-    // only while groups are on.
+    // only while groups are on and not learning (learning never posts in a group).
+    const groupsGetSync = this.config.allowGroups && !this.learnsInGroups()
     const boundList = this.bindings.filter(
       (b) =>
         Boolean(b.orcaChatId) &&
-        (this.config.allowGroups || !b.tgChatId.startsWith('-')) &&
+        (groupsGetSync || !b.tgChatId.startsWith('-')) &&
         (allowed.has(b.tgChatId) || (b.ownerUserId !== undefined && allowed.has(b.ownerUserId)))
     )
     if (boundList.length === 0) return
