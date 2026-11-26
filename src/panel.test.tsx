@@ -1516,13 +1516,13 @@ test('privacy mode on shows the BotFather steps', async () => {
   await view.unmount()
 })
 
-test('privacy mode on in learning mode says the bot learns only from @mentions', async () => {
+test('privacy mode on in learning mode says ordinary group messages never reach it', async () => {
   const view = await mountGroups(
     { allowGroups: true, groupMode: 'all', groupReply: 'learn' },
     { canJoinGroups: true, canReadAllGroupMessages: false }
   )
   assert.equal(calloutsTitled(view, PRIVACY_TITLE).length, 1)
-  assert.ok(view.find({ text: /Learning mode runs no command and never posts, so it learns only from messages that @mention it/ }))
+  assert.ok(view.find({ text: /Learning mode runs no command and never posts, so ordinary group messages never reach it/ }))
   assert.ok(view.find({ text: 'Or make the bot an admin of the group: an admin gets every message.' }))
   await view.unmount()
 })

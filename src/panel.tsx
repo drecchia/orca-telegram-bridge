@@ -1352,9 +1352,9 @@ function bridgeEditor(bridge: BridgeView, botName: string, isBusy: boolean, conf
             <Callout tone="warning" icon="warning" title="Privacy mode is on">
               <Stack gap="xs">
                 <Text size="xs">
-                  {`In groups the bot gets only commands, @mentions and replies to its messages. ${
+                  {`In groups the bot gets only messages meant for it, such as commands and replies to its messages. ${
                     groupChoice === 'all-learn'
-                      ? 'Learning mode runs no command and never posts, so it learns only from messages that @mention it. To learn from every message:'
+                      ? 'Learning mode runs no command and never posts, so ordinary group messages never reach it. To learn from every message:'
                       : 'To follow the conversation:'
                   }`}
                 </Text>

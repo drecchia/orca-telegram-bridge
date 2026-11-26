@@ -228,7 +228,7 @@ A bridge updated from 0.4.0 or older starts with **Answers when called**, the be
 Telegram decides two things that the plugin cannot change. Set them for the bot in `@BotFather`; after the bot has connected once, the bridge's editor warns under **Groups** when one of them blocks the option you chose:
 
 - **Allow Groups?** (`/setjoingroups`): must be enabled, or Telegram refuses to add the bot to a group.
-- **Privacy mode** (`/setprivacy`; [Telegram: privacy mode](https://core.telegram.org/bots/features#privacy-mode)): on by default. While it is on, the bot receives only commands addressed to it, messages that `@mention` it and replies to its own messages: the **Follows the conversation** options do not work, and **Learns from the conversation** gets only the `@mentions` (it runs no command and never posts). Choose **Disable**, then remove the bot from the group and add it again; Telegram applies the change only then. A bot that is a group admin receives every message either way.
+- **Privacy mode** (`/setprivacy`; [Telegram: privacy mode](https://core.telegram.org/bots/features#privacy-mode)): on by default. While it is on, the bot receives only messages meant for it, such as commands addressed to it and replies to its own messages: the **Follows the conversation** options do not work, and **Learns from the conversation** gets no ordinary group message (it runs no command and never posts). Choose **Disable**, then remove the bot from the group and add it again; Telegram applies the change only then. A bot that is a group admin receives every message either way.
 
 Then:
 

@@ -3485,7 +3485,7 @@ test('joining a group in learning mode logs its ID and warns while privacy mode 
     await controller.handleIncomingUpdate(botJoinedGroup(1))
     assert.equal(
       joinLog()?.message,
-      `Added to group ${GROUP_ID} (Team): the bot is a member. Privacy mode is on, so learning mode gets only messages that @mention the bot here: disable it in @BotFather (/setprivacy) and add the bot again, or make the bot an admin. To allow everyone in it, add ${GROUP_ID} under "Only these people and groups".`
+      `Added to group ${GROUP_ID} (Team): the bot is a member. Privacy mode is on, so ordinary group messages never reach learning mode here: disable it in @BotFather (/setprivacy) and add the bot again, or make the bot an admin. To allow everyone in it, add ${GROUP_ID} under "Only these people and groups".`
     )
     assert.equal(joinLog()?.level, 'info')
 

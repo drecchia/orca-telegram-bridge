@@ -18,7 +18,7 @@ Learning = `allowGroups` + `groupMode: 'all'` + `groupReply: 'learn'`.
 - When the bridge is open to everyone, then the bot reads nothing in groups (same rule as the other "follows" options) and still never answers there.
 - When Orca-side sync is on, then group chats of this bridge are not synced (private chats still are).
 - Private chats: unchanged.
-- When privacy mode is on (`/setprivacy`), then Telegram sends the bot only commands, @mentions and replies to it: learning mode gets only the @mentions. The panel's privacy callout and the "Added to group" log say so (issue #8).
+- When privacy mode is on (`/setprivacy`), then Telegram sends the bot only messages meant for it (commands, replies to it), so ordinary group lines never reach learning mode. The panel's privacy callout and the "Added to group" log say so (issue #8).
 
 Learning line in the handoff (replaces the "will be sent back" line; no attachment or language line):
 `You are in learning mode in this Telegram group: read this message and learn from it as your instructions (SOUL.md) say. Never reply, even when the message mentions or asks you: answer exactly NO_REPLY. Nothing you write is sent to Telegram.`

@@ -1778,8 +1778,8 @@ export class BridgeRuntime {
     if (status === 'member' && this.telegramCaps?.canReadAllGroupMessages === false) {
       parts.push(
         this.learnsInGroups()
-          ? 'Privacy mode is on, so learning mode gets only messages that @mention the bot here: disable it in @BotFather (/setprivacy) and add the bot again, or make the bot an admin.'
-          : 'Privacy mode is on, so Telegram sends the bot only commands, @mentions and replies to its messages here.'
+          ? 'Privacy mode is on, so ordinary group messages never reach learning mode here: disable it in @BotFather (/setprivacy) and add the bot again, or make the bot an admin.'
+          : 'Privacy mode is on, so Telegram sends the bot only messages meant for it here, such as commands and replies to its messages.'
       )
     }
     if (this.config.restricted && !parseAllowedIds(this.config.allowedUserIds).has(tgChatId)) {
