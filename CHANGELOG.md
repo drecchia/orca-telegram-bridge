@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/drecchia/orca-telegram-bridge/compare/v0.16.0...v0.17.0) (2026-11-26)
+
+
+### Features
+
+* add catalog screenshots ([#19](https://github.com/drecchia/orca-telegram-bridge/issues/19)) ([d4eea63](https://github.com/drecchia/orca-telegram-bridge/commit/d4eea63f6adb713bcfb1e17847600e5b7169ee42))
+
 ## [0.16.0](https://github.com/drecchia/orca-telegram-bridge/compare/v0.15.5...v0.16.0) (2026-11-26)
 
 
