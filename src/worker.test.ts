@@ -3490,15 +3490,28 @@ test('joining a group in learning mode logs its ID and warns while privacy mode 
     assert.equal(joinLog()?.level, 'info')
     // The panel offers the group at once, before any line arrives.
     assert.deepEqual(controller.view().unlistedGroup, { id: String(GROUP_ID), title: 'Team' })
+    // The join does not use up the warn: the first line after it still names the group.
+    await controller.handleIncomingUpdate(groupUpdate(2, 555, 'hello'))
+    assert.ok(
+      manager.getState().logs.some((e) => e.level === 'warn' && e.message.startsWith(`Group ${GROUP_ID} (Team) is not on the allowlist`))
+    )
 
     // The owner disables privacy in @BotFather and adds the bot again: getMe is read anew.
     deps.telegram.getMe = async () => ({ ...BOT_USER, can_join_groups: true, can_read_all_group_messages: true })
-    await controller.handleIncomingUpdate(botJoinedGroup(2))
+    await controller.handleIncomingUpdate(botJoinedGroup(3))
     assert.deepEqual(controller.view().telegramCaps, { canJoinGroups: true, canReadAllGroupMessages: true })
     assert.equal(
       joinLog()?.message,
       `Added to group ${GROUP_ID} (Team): the bot is a member. To allow everyone in it, add ${GROUP_ID} under "Only these people and groups".`
     )
+
+    // Removed from the group: the banner has nothing left to allow.
+    const joined = botJoinedGroup(4).my_chat_member!
+    await controller.handleIncomingUpdate({
+      update_id: 4,
+      my_chat_member: { ...joined, old_chat_member: joined.new_chat_member, new_chat_member: { status: 'left', user: BOT_USER } }
+    })
+    assert.equal(controller.view().unlistedGroup, null)
   })
 })
 

@@ -947,9 +947,13 @@ export class BridgeRuntime {
       botDisplayName: this.botDisplayName,
       lastError: this.lastError,
       lastBlockedUserId: this.lastBlockedUserId,
-      // Hidden once the group is listed by hand in the editor, or the bridge is open to everyone.
+      // Hidden once the group is listed by hand in the editor, while groups are off, or while the
+      // bridge is open to everyone.
       unlistedGroup:
-        this.unlistedGroup && this.config.restricted && !parseAllowedIds(this.config.allowedUserIds).has(this.unlistedGroup.id)
+        this.unlistedGroup &&
+        this.config.allowGroups &&
+        this.config.restricted &&
+        !parseAllowedIds(this.config.allowedUserIds).has(this.unlistedGroup.id)
           ? this.unlistedGroup
           : null,
       lastPollAt: this.lastPollAt,
@@ -1198,10 +1202,7 @@ export class BridgeRuntime {
       this.lastBlockedUserId = null
       await this.orca.storage.set(this.key('lastBlocked'), null)
     }
-    if (this.unlistedGroup?.id === clean) {
-      this.unlistedGroup = null
-      await this.orca.storage.set(this.key('unlistedGroup'), null)
-    }
+    await this.forgetUnlistedGroup(clean)
     await this.appendLog('info', 'config', `Added Telegram ${clean.startsWith('-') ? 'group' : 'user'} ${clean} to allowlist.`)
     await this.auditPanel('allow', clean)
     this.emitState()
@@ -1285,12 +1286,15 @@ export class BridgeRuntime {
     const allowed = parseAllowedIds(this.config.allowedUserIds)
     // Any line from a group not on a restricted list, even one ignored below or sent by a listed
     // person, puts the group in the panel's "Allow group" banner and logs its ID once a minute.
-    if (inGroup && this.config.restricted && !allowed.has(tgChatId) && (await this.recordUnlistedGroup(msg.chat))) {
-      await this.appendLog(
-        'warn',
-        'bridge',
-        `Group ${tgChatId}${msg.chat.title ? ` (${msg.chat.title})` : ''} is not on the allowlist: only listed people reach the bot there. To allow everyone in it, press Allow group in the panel.`
-      )
+    if (inGroup && this.config.restricted && !allowed.has(tgChatId)) {
+      await this.recordUnlistedGroup(msg.chat)
+      if (this.firstInBlockWindow(`group:${tgChatId}`)) {
+        await this.appendLog(
+          'warn',
+          'bridge',
+          `Group ${tgChatId}${msg.chat.title ? ` (${msg.chat.title})` : ''} is not on the allowlist: only listed people reach the bot there. To allow everyone in it, press Allow group in the panel.`
+        )
+      }
     }
     const image = extractIncomingImage(msg)
     const unsupportedImage =
@@ -1768,17 +1772,21 @@ export class BridgeRuntime {
     return true
   }
 
-  // A group not on the list, for the panel's "Allow group" banner. Returns false while that group is
-  // still inside the window, so a busy group logs at most once a minute.
-  private async recordUnlistedGroup(chat: TelegramChat): Promise<boolean> {
+  // A group not on the list, for the panel's "Allow group" banner. Only the latest one is kept.
+  private async recordUnlistedGroup(chat: TelegramChat): Promise<void> {
     const id = String(chat.id)
     const title = (chat.title ?? '').trim()
-    if (this.unlistedGroup?.id !== id || this.unlistedGroup.title !== title) {
-      this.unlistedGroup = { id, title }
-      await this.orca.storage.set(this.key('unlistedGroup'), toPlainJson(this.unlistedGroup))
-      this.emitState()
-    }
-    return this.firstInBlockWindow(`group:${id}`)
+    if (this.unlistedGroup?.id === id && this.unlistedGroup.title === title) return
+    this.unlistedGroup = { id, title }
+    await this.orca.storage.set(this.key('unlistedGroup'), toPlainJson(this.unlistedGroup))
+    this.emitState()
+  }
+
+  // Once the group is allowed or the bot is out of it, the banner has nothing to offer.
+  private async forgetUnlistedGroup(id: string): Promise<void> {
+    if (this.unlistedGroup?.id !== id) return
+    this.unlistedGroup = null
+    await this.orca.storage.set(this.key('unlistedGroup'), null)
   }
 
   private firstInBlockWindow(key: string): boolean {
@@ -1798,6 +1806,11 @@ export class BridgeRuntime {
   private async handleMembership(change: TelegramChatMemberUpdated): Promise<void> {
     const status = change.new_chat_member.status
     if (!isGroupChat(change.chat)) return
+    if (status === 'left' || status === 'kicked') {
+      await this.forgetUnlistedGroup(String(change.chat.id))
+      this.emitState()
+      return
+    }
     if (status !== 'member' && status !== 'administrator') return
     if (!this.config.allowGroups) {
       await this.leaveGroup(change.chat, 'info')
@@ -1842,6 +1855,7 @@ export class BridgeRuntime {
   private async leaveGroup(chat: TelegramChat, level: 'info' | 'debug'): Promise<void> {
     const tgChatId = String(chat.id)
     this.leftGroups.add(tgChatId)
+    await this.forgetUnlistedGroup(tgChatId)
     const token = await this.readToken()
     if (!token) return
     try {

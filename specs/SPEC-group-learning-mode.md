@@ -15,7 +15,7 @@ Learning = `allowGroups` + `groupMode: 'all'` + `groupReply: 'learn'`.
 - When a button on an older bot message in the group is pressed, then nothing happens (debug log; the tap is not answered).
 - When the Orca bot answers anything but `NO_REPLY`, then the bridge withholds it (info log with length only), like `mentioned`.
 - When the sender is not on the allowlist, or the role may not chat, then the message is ignored quietly (no access-denied line).
-- When any message (commands too) comes from a group not on the allowlist, then the panel shows the group with **Allow group \<ID\>** and a warn log names the group ID (once a minute per group; issue #11). A listed person's line there still reaches the Orca bot.
+- When any message (commands too) comes from a group not on the allowlist, then the panel shows the group with **Allow group \<ID\>** and a warn log names the group ID (once a minute per group; the bot joining does not count; issue #11). A listed person's line there still reaches the Orca bot. When the bot leaves or is removed from the group, then the banner goes; while groups are off, it is hidden.
 - When the bridge is open to everyone, then the bot reads nothing in groups (same rule as the other "follows" options) and still never answers there.
 - When Orca-side sync is on, then group chats of this bridge are not synced (private chats still are).
 - Private chats: unchanged.
