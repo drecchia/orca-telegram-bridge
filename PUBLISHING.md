@@ -2,7 +2,7 @@
 
 This document is the checklist for releasing `orca-telegram-bridge` from `github.com/drecchia/orca-telegram-bridge` and for getting it listed in the **Orca Community Plugins** directory (`https://orca.dev/plugins`). For how users install the plugin, see [README.md → Install](./README.md#install).
 
-> **Listing blocker: this repository is a fork.** `drecchia/orca-telegram-bridge` is a GitHub fork of `HenryMa96/orca-telegram-bridge`. The directory leaves forks out (`https://orca.dev/plugins/add`, "What gets a plugin left out"). Until that changes, users install from GitHub (`orca plugin install drecchia/orca-telegram-bridge`), and the catalog id `drecchia.telegram-bridge` does not resolve. To get listed, the repository must stop being a fork: ask GitHub Support to detach it, or delete/rename this fork and push the code to a new, non-fork repository under `drecchia`. A new repository changes the install URL; existing GitHub installs must reinstall from it and approve again. The plugin key stays `drecchia.telegram-bridge` while the owner stays `drecchia`.
+> **Not a fork.** `drecchia/orca-telegram-bridge` was a GitHub fork of `HenryMa96/orca-telegram-bridge`; it is now a standalone repository, so the directory can list it (`https://orca.dev/plugins/add`, "What gets a plugin left out"). It has the `orca-plugin` topic. The plugin key stays `drecchia.telegram-bridge` while the owner stays `drecchia`.
 
 > **Note on Official vs. Community Catalogs**
 > - `stablyai/orca-plugins` only accepts first-party plugins maintained by Stably (`CONTRIBUTING.md` explicitly rejects external PRs).
@@ -85,4 +85,4 @@ Releases come from [release-please](https://github.com/googleapis/release-please
    orca plugin install drecchia/orca-telegram-bridge@vX.Y.Z
    ```
    A new version that asks for new access stops with `approval_required` (exit code `3`). Check the listed access, publisher and repository, then run the printed `--approve <fingerprint>` command.
-6. Check the listing status (usually updates within an hour): `https://orca.dev/plugins/drecchia/orca-telegram-bridge`. While the repository is a fork, it stays unlisted (see the blocker at the top). Once listed, `orca plugin install drecchia.telegram-bridge` works too.
+6. Check the listing status (usually updates within an hour): `https://orca.dev/plugins/drecchia/orca-telegram-bridge`. Once listed, `orca plugin install drecchia.telegram-bridge` works too.
