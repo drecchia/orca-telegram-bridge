@@ -32,11 +32,11 @@ stablyai/orca#45959. This spec delivers the closest equivalent inside the plugin
 ## API / Interface
 - `BridgeConfig` gains `id` and `name`; `BridgeState` becomes `{ bridges: BridgeView[], logs, logTotal, global: GlobalConfig }`
   where `BridgeView` = today's per-bridge fields (status, polling, botUsername, lastError,
-  lastBlockedUserId, config, bindings) plus `id`, `name`.
+  lastBlockedUserId, unlistedGroup, config, bindings) plus `id`, `name`.
 - Panel handlers take `bridgeId` where they act on one bridge: `bridge.saveConfig`, `testConnection`,
   `setEnabled`, `allowUserId`, `resetBinding`; new `bridge.add` → `{ bridgeId }`, `bridge.remove({ bridgeId })`.
 - Storage: `bridges` (array of non-secret configs, all per-bridge settings incl. proxy and timeout);
-  per bridge `tg.<id>.offset|bindings|syncCursors|lastBlocked`, keyed by the stable bridge id.
+  per bridge `tg.<id>.offset|bindings|syncCursors|lastBlocked|unlistedGroup`, keyed by the stable bridge id.
   Secrets: `botToken.<id>`. Only `debugLogging` stays a plugin setting; the old settings stay
   declared for one release so the migration can read them.
 - Plugin key for the status-bar "open panel" command: resolved once via `orca plugin list --json`

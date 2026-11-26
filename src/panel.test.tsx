@@ -64,6 +64,7 @@ function makeBridge(id: string, overrides: BridgeOverrides = {}): BridgeView {
     botDisplayName: 'DemoBot',
     lastError: null,
     lastBlockedUserId: null,
+    unlistedGroup: null,
     lastPollAt: Date.now(),
     bindings: [binding('123456', 'Assistant', 'chat-abc')],
     telegramCaps: { canJoinGroups: true, canReadAllGroupMessages: true },
@@ -224,6 +225,28 @@ test('renders bridge status, allows saving config, and handles unauthorized user
   assert.deepEqual(view.errors, [])
   assert.deepEqual(view.refusals, [])
   await view.unmount()
+})
+
+test('the group banner allows the group ID', async () => {
+  let currentState = makeState({ bridges: [makeBridge('b1', { unlistedGroup: { id: '-100500', title: 'Team' } })] })
+  const allowed: Array<{ bridgeId: string; userId: string }> = []
+  const host = panelHost({
+    requests: {
+      'bridge.getState': () => currentState,
+      'bridge.allowUserId': (input: { bridgeId: string; userId: string }) => {
+        allowed.push(input)
+        currentState = withBridge(currentState, 'b1', {
+          unlistedGroup: null,
+          config: { allowedUserIds: `123456, ${input.userId}` }
+        })
+        return currentState
+      }
+    }
+  })
+  const view = await mount(panel, { host })
+  await view.press({ text: 'Allow group -100500' })
+  assert.deepEqual(allowed, [{ bridgeId: 'b1', userId: '-100500' }])
+  assert.equal(view.find({ text: 'Allow group -100500' }), null)
 })
 
 test("only the selected bot's bridge, chats and logs show; selecting another bot switches them", async () => {

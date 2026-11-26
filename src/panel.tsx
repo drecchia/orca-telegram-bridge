@@ -873,6 +873,7 @@ function bridgeCard(bridge: BridgeView, botName: string, isBusy: boolean) {
   const badge = statusMeta(bridge.status)
   const openToEveryone = !bridge.config.restricted
   const blockedUserId = bridge.lastBlockedUserId
+  const unlistedGroup = bridge.unlistedGroup
   return (
     <Card
       key={`bridge:${bridge.id}`}
@@ -925,6 +926,26 @@ function bridgeCard(bridge: BridgeView, botName: string, isBusy: boolean) {
                 onPress={() => void allowBlockedUser(bridge.id, blockedUserId)}
               >
                 Allow {blockedUserId}
+              </Button>
+            </Stack>
+          </Callout>
+        )}
+        {unlistedGroup && (
+          <Callout tone="warning" title="Group not in the allowlist" icon="warning">
+            <Stack gap="xs">
+              <Text size="xs">
+                The bot is in group <Code>{unlistedGroup.id}</Code>
+                {clip(unlistedGroup.title ? ` (${unlistedGroup.title})` : '')}, which is not in the allowlist. Allowing it
+                lets every member use the bot as Member.
+              </Text>
+              <Button
+                key={`allow-group:${bridge.id}`}
+                size="xs"
+                variant="outline"
+                disabled={isBusy}
+                onPress={() => void allowBlockedUser(bridge.id, unlistedGroup.id)}
+              >
+                Allow group {unlistedGroup.id}
               </Button>
             </Stack>
           </Callout>

@@ -3488,6 +3488,8 @@ test('joining a group in learning mode logs its ID and warns while privacy mode 
       `Added to group ${GROUP_ID} (Team): the bot is a member. Privacy mode is on, so ordinary group messages never reach learning mode here: disable it in @BotFather (/setprivacy) and add the bot again, or make the bot an admin. To allow everyone in it, add ${GROUP_ID} under "Only these people and groups".`
     )
     assert.equal(joinLog()?.level, 'info')
+    // The panel offers the group at once, before any line arrives.
+    assert.deepEqual(controller.view().unlistedGroup, { id: String(GROUP_ID), title: 'Team' })
 
     // The owner disables privacy in @BotFather and adds the bot again: getMe is read anew.
     deps.telegram.getMe = async () => ({ ...BOT_USER, can_join_groups: true, can_read_all_group_messages: true })
@@ -3497,6 +3499,38 @@ test('joining a group in learning mode logs its ID and warns while privacy mode 
       joinLog()?.message,
       `Added to group ${GROUP_ID} (Team): the bot is a member. To allow everyone in it, add ${GROUP_ID} under "Only these people and groups".`
     )
+  })
+})
+
+test('any line from an unlisted group offers it to allow, even a command or a listed person\'s line; Allow lets its members in', async () => {
+  const config = { allowGroups: true, groupMode: 'all', groupReply: 'learn', allowedUserIds: '777888' }
+  const team = { id: String(GROUP_ID), title: 'Team' }
+  await withGroupBridge(config, async (controller, deps, manager) => {
+    // Learning mode ignores commands, yet with privacy mode on they are what Telegram still sends.
+    await controller.handleIncomingUpdate(groupUpdate(1, 555, '/status'))
+    assert.deepEqual(controller.view().unlistedGroup, team)
+    await controller.handleIncomingUpdate(groupUpdate(2, 555, 'the deploy failed'))
+    assert.equal(deps.sentToBots.length, 0)
+    assert.equal(controller.view().lastBlockedUserId, null)
+    // One warn per group a minute, not one per line.
+    assert.deepEqual(
+      manager
+        .getState()
+        .logs.filter((e) => e.level === 'warn')
+        .map((e) => e.message),
+      [`Group ${GROUP_ID} (Team) is not on the allowlist: only listed people reach the bot there. To allow everyone in it, press Allow group in the panel.`]
+    )
+
+    await controller.allowUserId(String(GROUP_ID))
+    assert.equal(controller.view().unlistedGroup, null)
+    await controller.handleIncomingUpdate(groupUpdate(3, 555, 'still failing'))
+    assert.equal(deps.sentToBots.length, 1)
+  })
+  // A listed person's line still reaches the bot, and the group is offered for everyone else.
+  await withGroupBridge(config, async (controller, deps) => {
+    await controller.handleIncomingUpdate(groupUpdate(1, 777888, 'the deploy failed'))
+    assert.equal(deps.sentToBots.length, 1)
+    assert.deepEqual(controller.view().unlistedGroup, team)
   })
 })
 

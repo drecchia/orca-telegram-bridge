@@ -103,6 +103,8 @@ export type BridgeView = {
   botDisplayName: string | null
   lastError: string | null
   lastBlockedUserId: string | null
+  // The latest group not on a restricted allowlist that the bot heard from or joined; null once listed.
+  unlistedGroup: { id: string; title: string } | null
   lastPollAt: number | null
   config: BridgeConfig
   bindings: ChatBinding[]
