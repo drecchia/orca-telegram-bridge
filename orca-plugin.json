@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "telegram-bridge",
   "name": "Telegram Bridge",
-  "version": "0.15.2",
+  "version": "0.15.3",
   "description": "Two-way Telegram bot bridge that routes messages to your Orca bots and sends replies back.",
   "license": "MIT",
   "repository": "https://github.com/drecchia/orca-telegram-bridge",
@@ -107,8 +107,16 @@
         "description": "Legacy (read once to create Bridge 1; edit bridges in the Telegram panel). Language of the bridge's own Telegram replies and command menu: en (English), pt-BR (Português do Brasil) or zh-CN (中文). Bot replies are not translated.",
         "type": "string",
         "default": "en",
-        "enum": ["en", "pt-BR", "zh-CN"],
-        "enumLabels": ["English", "Português (Brasil)", "中文"]
+        "enum": [
+          "en",
+          "pt-BR",
+          "zh-CN"
+        ],
+        "enumLabels": [
+          "English",
+          "Português (Brasil)",
+          "中文"
+        ]
       },
       {
         "key": "debugLogging",
