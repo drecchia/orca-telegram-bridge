@@ -13,6 +13,10 @@
     "url": "https://github.com/drecchia"
   },
   "icon": "assets/icon.png",
+  "cover": {
+    "path": "assets/cover.png",
+    "alt": "Telegram Bridge: a paper plane and an orca linked by a glowing message path"
+  },
   "engines": {
     "orca": ">=1.4.248"
   },
