@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/drecchia/orca-telegram-bridge/compare/v0.17.0...v0.17.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* rewrite plugin description for the catalog ([#21](https://github.com/drecchia/orca-telegram-bridge/issues/21)) ([50f900b](https://github.com/drecchia/orca-telegram-bridge/commit/50f900b63d0d8d0d4e5f0adb91cc9d376f8781fd))
+
 ## [0.17.0](https://github.com/drecchia/orca-telegram-bridge/compare/v0.16.0...v0.17.0) (2026-11-26)
 
 
