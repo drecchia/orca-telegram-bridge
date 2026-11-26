@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "telegram-bridge",
   "name": "Telegram Bridge",
-  "version": "0.15.3",
+  "version": "0.15.4",
   "description": "Two-way Telegram bot bridge that routes messages to your Orca bots and sends replies back.",
   "license": "MIT",
   "repository": "https://github.com/drecchia/orca-telegram-bridge",

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.4](https://github.com/drecchia/orca-telegram-bridge/compare/v0.15.3...v0.15.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* show group ID and privacy-mode cause when group messages never arrive ([#9](https://github.com/drecchia/orca-telegram-bridge/issues/9)) ([d88c69c](https://github.com/drecchia/orca-telegram-bridge/commit/d88c69c3b3aaccbf0ec41570fa5846bdead200ab))
+
 ## [0.15.3](https://github.com/drecchia/orca-telegram-bridge/compare/v0.15.2...v0.15.3) (2026-11-26)
 
 
