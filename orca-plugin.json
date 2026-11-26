@@ -17,6 +17,20 @@
     "path": "assets/cover.png",
     "alt": "Telegram Bridge: a paper plane and an orca linked by a glowing message path"
   },
+  "screenshots": [
+    {
+      "path": "assets/screenshots/01-setup.png",
+      "alt": "Setup tab of the Telegram panel with one bridge card: bot name, active toggle, people, groups and voice"
+    },
+    {
+      "path": "assets/screenshots/02-editor.png",
+      "alt": "Bridge editor: bot token, who can talk, people and groups, group mode, voice messages and advanced settings"
+    },
+    {
+      "path": "assets/screenshots/03-roles.png",
+      "alt": "Roles editor: checkboxes for what a role may do and an extra prompt for the Orca bot"
+    }
+  ],
   "engines": {
     "orca": ">=1.4.248"
   },
