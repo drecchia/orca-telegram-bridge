@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.5](https://github.com/drecchia/orca-telegram-bridge/compare/v0.15.4...v0.15.5) (2026-11-26)
+
+
+### Bug Fixes
+
+* offer an unlisted group in the panel to allow, like a blocked user ([#12](https://github.com/drecchia/orca-telegram-bridge/issues/12)) ([05a2c59](https://github.com/drecchia/orca-telegram-bridge/commit/05a2c59e23ccf7fd3ed0abd31fac8059e66a1a61))
+
 ## [0.15.4](https://github.com/drecchia/orca-telegram-bridge/compare/v0.15.3...v0.15.4) (2026-11-26)
 
 
