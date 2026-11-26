@@ -228,13 +228,13 @@ A bridge updated from 0.4.0 or older starts with **Answers when called**, the be
 Telegram decides two things that the plugin cannot change. Set them for the bot in `@BotFather`; after the bot has connected once, the bridge's editor warns under **Groups** when one of them blocks the option you chose:
 
 - **Allow Groups?** (`/setjoingroups`): must be enabled, or Telegram refuses to add the bot to a group.
-- **Privacy mode** (`/setprivacy`; [Telegram: privacy mode](https://core.telegram.org/bots/features#privacy-mode)): on by default. While it is on, the bot receives only commands addressed to it and replies to its own messages: `@yourbot` mentions and the **Follows the conversation** options do not work. Choose **Disable**, then remove the bot from the group and add it again; Telegram applies the change only then. A bot that is a group admin receives every message either way.
+- **Privacy mode** (`/setprivacy`; [Telegram: privacy mode](https://core.telegram.org/bots/features#privacy-mode)): on by default. While it is on, the bot receives only commands addressed to it, messages that `@mention` it and replies to its own messages: the **Follows the conversation** options do not work, and **Learns from the conversation** gets only the `@mentions` (it runs no command and never posts). Choose **Disable**, then remove the bot from the group and add it again; Telegram applies the change only then. A bot that is a group admin receives every message either way.
 
 Then:
 
 1. Add the bot to the group in Telegram (group menu → **Add members**).
 2. Talk to it as the **Groups** option allows.
-3. To restrict access to this group, add the group's ID under **Only these people and groups**. The group's ID appears in the **Chats** tab (`TG -100… -> …`) after the bot answers there once. In restricted mode, a blocked group message also logs it in the **Logs** tab: `Blocked unauthorized Telegram user <ID> (…) in group -100…`.
+3. To restrict access to this group, add the group's ID under **Only these people and groups**. When the bot is added to a group, the **Logs** tab shows its ID: `Added to group -100… (<title>): the bot is a member.`, with a privacy warning when privacy mode keeps messages from it. The ID also appears in the **Chats** tab (`TG -100… -> …`) after the bot handles a message there. In restricted mode, a blocked group message also logs it: `Blocked unauthorized Telegram user <ID> (…) in group -100…`.
 
 In a group, everyone sees the bot's replies, and the whole group shares one Orca chat: `/new`, `/bind` and `/home` change it for everyone in that group.
 

@@ -1352,12 +1352,16 @@ function bridgeEditor(bridge: BridgeView, botName: string, isBusy: boolean, conf
             <Callout tone="warning" icon="warning" title="Privacy mode is on">
               <Stack gap="xs">
                 <Text size="xs">
-                  In groups the bot gets only commands and replies to its messages. For @mentions
-                  and to follow the conversation:
+                  {`In groups the bot gets only commands, @mentions and replies to its messages. ${
+                    groupChoice === 'all-learn'
+                      ? 'Learning mode runs no command and never posts, so it learns only from messages that @mention it. To learn from every message:'
+                      : 'To follow the conversation:'
+                  }`}
                 </Text>
                 <Text size="xs">1. In @BotFather, send /setprivacy and pick this bot.</Text>
                 <Text size="xs">2. Choose Disable.</Text>
                 <Text size="xs">3. Add the bot to the group again.</Text>
+                <Text size="xs">Or make the bot an admin of the group: an admin gets every message.</Text>
               </Stack>
             </Callout>
           )}

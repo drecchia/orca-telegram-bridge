@@ -3477,6 +3477,29 @@ test('with groups off the bot leaves a group it is added to, every time; with gr
   })
 })
 
+test('joining a group in learning mode logs its ID and warns while privacy mode keeps messages away', async () => {
+  const config = { allowGroups: true, groupMode: 'all', groupReply: 'learn', allowedUserIds: '777888' }
+  await withGroupBridge(config, async (controller, deps, manager) => {
+    // Logs are newest first.
+    const joinLog = () => manager.getState().logs.find((e) => e.message.startsWith('Added to group'))
+    await controller.handleIncomingUpdate(botJoinedGroup(1))
+    assert.equal(
+      joinLog()?.message,
+      `Added to group ${GROUP_ID} (Team): the bot is a member. Privacy mode is on, so learning mode gets only messages that @mention the bot here: disable it in @BotFather (/setprivacy) and add the bot again, or make the bot an admin. To allow everyone in it, add ${GROUP_ID} under "Only these people and groups".`
+    )
+    assert.equal(joinLog()?.level, 'info')
+
+    // The owner disables privacy in @BotFather and adds the bot again: getMe is read anew.
+    deps.telegram.getMe = async () => ({ ...BOT_USER, can_join_groups: true, can_read_all_group_messages: true })
+    await controller.handleIncomingUpdate(botJoinedGroup(2))
+    assert.deepEqual(controller.view().telegramCaps, { canJoinGroups: true, canReadAllGroupMessages: true })
+    assert.equal(
+      joinLog()?.message,
+      `Added to group ${GROUP_ID} (Team): the bot is a member. To allow everyone in it, add ${GROUP_ID} under "Only these people and groups".`
+    )
+  })
+})
+
 test("'addressed' answers mentions in an allowed group and ignores the rest of the talk", async () => {
   await withGroupBridge(
     { allowGroups: true, groupMode: 'addressed', allowedUserIds: `777888, ${GROUP_ID}` },
@@ -3995,6 +4018,40 @@ test('Telegram caps come from getMe, are null before it, and reset with a new to
     await manager.saveConfig(saveInput(controller, { botToken: '654321:OTHER_TOKEN' }))
     assert.equal(controller.view().telegramCaps, null)
   } finally {
+    await worker.deactivate()
+  }
+})
+
+test('each poll run reads getMe again, so a privacy change in @BotFather shows after a restart', async () => {
+  const host = bridgesHost([{ id: 'b-caps0002', token: '123456:TEST_TOKEN', config: { enabled: true } }])
+  let privacyOn = true
+  const deps = makeMockDeps({
+    telegram: {
+      async getMe() {
+        return { ...BOT_USER, can_join_groups: true, can_read_all_group_messages: !privacyOn }
+      },
+      // Like Telegram with no new updates: a long poll holds until the loop aborts, a short poll answers.
+      async getUpdates(_token, params, options) {
+        if ((params.timeoutSec ?? 0) > 0) {
+          const aborted = Promise.withResolvers<void>()
+          options?.signal?.addEventListener('abort', () => aborted.resolve(), { once: true })
+          if (!options?.signal?.aborted) await aborted.promise
+        }
+        return []
+      }
+    }
+  })
+  const { manager, controller, worker } = await mountController(host, { telegram: deps.telegram, orcaCli: deps.orcaCli })
+  try {
+    await until(() => controller.view().status === 'connected', 'first connect')
+    assert.deepEqual(controller.view().telegramCaps, { canJoinGroups: true, canReadAllGroupMessages: false })
+
+    privacyOn = false
+    await within(manager.togglePolling(), 'pause')
+    await within(manager.togglePolling(), 'start again')
+    await until(() => controller.view().telegramCaps?.canReadAllGroupMessages === true, 'caps read again')
+  } finally {
+    await within(controller.dispose(), 'dispose')
     await worker.deactivate()
   }
 })

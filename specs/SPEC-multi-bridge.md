@@ -87,6 +87,11 @@ stablyai/orca#45959. This spec delivers the closest equivalent inside the plugin
   `can_read_all_group_messages`); the plugin cannot change them, only `@BotFather` can:
   groups allowed but `/setjoingroups` disabled; `all` or mentions wanted but privacy mode on
   (`/setprivacy` → Disable, then re-add the bot).
+- `allowGroups` on: when the bot is added to a group (or its status there changes), the bridge
+  reads `getMe` again and logs at info level `Added to group <id> (<title>): the bot is a
+  member.`, with a privacy-mode note while privacy mode keeps messages away and, on a restricted
+  bridge, the hint to add the group ID to the list. `getMe` is also read on every poll run, so a
+  `@BotFather` change shows after a reconnect (issue #8).
 - Defaults: new bridges `allowGroups: false`; the migrated Bridge 1 keeps today's behavior
   (`allowGroups: true`, `groupMode: 'addressed'`).
 

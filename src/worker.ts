@@ -1755,12 +1755,50 @@ export class BridgeRuntime {
   }
 
   // Telegram reports the bot's own membership changes. With groups off, the bot leaves any group it
-  // is added to.
+  // is added to. With groups on, joining or a new status is logged with the group's ID (what the
+  // owner lists to allow the whole group), after reading @BotFather's privacy setting again: owners
+  // often change it right before adding the bot.
   private async handleMembership(change: TelegramChatMemberUpdated): Promise<void> {
     const status = change.new_chat_member.status
-    if (this.config.allowGroups || !isGroupChat(change.chat)) return
+    if (!isGroupChat(change.chat)) return
     if (status !== 'member' && status !== 'administrator') return
-    await this.leaveGroup(change.chat, 'info')
+    if (!this.config.allowGroups) {
+      await this.leaveGroup(change.chat, 'info')
+      return
+    }
+    const oldStatus = change.old_chat_member.status
+    if (oldStatus === status) return
+    await this.refreshBotCaps()
+    const chat = change.chat
+    const tgChatId = String(chat.id)
+    const joined = oldStatus === 'left' || oldStatus === 'kicked'
+    const parts = [
+      `${joined ? 'Added to' : 'Status changed in'} group ${tgChatId}${chat.title ? ` (${chat.title})` : ''}: the bot is ${status === 'administrator' ? 'an admin' : 'a member'}.`
+    ]
+    if (status === 'member' && this.telegramCaps?.canReadAllGroupMessages === false) {
+      parts.push(
+        this.learnsInGroups()
+          ? 'Privacy mode is on, so learning mode gets only messages that @mention the bot here: disable it in @BotFather (/setprivacy) and add the bot again, or make the bot an admin.'
+          : 'Privacy mode is on, so Telegram sends the bot only commands, @mentions and replies to its messages here.'
+      )
+    }
+    if (this.config.restricted && !parseAllowedIds(this.config.allowedUserIds).has(tgChatId)) {
+      parts.push(`To allow everyone in it, add ${tgChatId} under "Only these people and groups".`)
+    }
+    await this.appendLog('info', 'bridge', parts.join(' '))
+    this.emitState()
+  }
+
+  // getMe again, for @BotFather settings changed while the bridge runs.
+  private async refreshBotCaps(): Promise<void> {
+    const token = await this.readToken()
+    if (!token) return
+    try {
+      this.rememberBot(await this.deps.telegram.getMe(token, { proxyUrl: this.config.proxyUrl, timeoutMs: 12_000 }))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      await this.appendLog('debug', 'telegram', `Reading the bot's settings failed: ${message}`, describeError(err))
+    }
   }
 
   private async leaveGroup(chat: TelegramChat, level: 'info' | 'debug'): Promise<void> {
@@ -3675,6 +3713,8 @@ export class BridgeRuntime {
   // Returns why it stopped on its own, or null when aborted or disposed.
   private async pollUntilStopped(abort: AbortController): Promise<string | null> {
     let backoffMs = this.deps.retryBackoffMs ?? 2000
+    // getMe once per poll run, so @BotFather settings changed since the last connect show.
+    let botChecked = false
 
     while (!abort.signal.aborted && !this.disposed) {
       const token = await this.readToken()
@@ -3685,7 +3725,8 @@ export class BridgeRuntime {
       }
 
       try {
-        if (!this.botUsername) {
+        if (!botChecked) {
+          const firstForToken = !this.botUsername
           this.rememberBot(
             await this.deps.telegram.getMe(token, {
               proxyUrl: this.config.proxyUrl,
@@ -3693,7 +3734,8 @@ export class BridgeRuntime {
               signal: abort.signal
             })
           )
-          this.lookUpMissingNames(token)
+          botChecked = true
+          if (firstForToken) this.lookUpMissingNames(token)
         }
 
         await this.ensureCommandsRegistered(token, abort.signal)
