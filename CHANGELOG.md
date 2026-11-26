@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.0](https://github.com/drecchia/orca-telegram-bridge/compare/v0.15.5...v0.16.0) (2026-11-26)
+
+
+### Features
+
+* add catalog cover and update install for catalog listing ([#15](https://github.com/drecchia/orca-telegram-bridge/issues/15)) ([bf6affe](https://github.com/drecchia/orca-telegram-bridge/commit/bf6affead2deb2f1a18122f0dd10e0716fcc5f50))
+* batch group learning mode messages in a file per group ([#16](https://github.com/drecchia/orca-telegram-bridge/issues/16)) ([1ea285a](https://github.com/drecchia/orca-telegram-bridge/commit/1ea285af370472ff44690ea4320c669415c939e5)), closes [#14](https://github.com/drecchia/orca-telegram-bridge/issues/14)
+
 ## [0.15.5](https://github.com/drecchia/orca-telegram-bridge/compare/v0.15.4...v0.15.5) (2026-11-26)
 
 
