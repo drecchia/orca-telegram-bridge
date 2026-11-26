@@ -54,6 +54,7 @@ function binding(tgChatId: string, botName: string, orcaChatId: string | null): 
 function makeBridge(id: string, overrides: BridgeOverrides = {}): BridgeView {
   const { config, ...rest } = overrides
   const name = rest.name ?? 'Main'
+  const allowedUserIds = config?.allowedUserIds ?? '123456'
   return {
     id,
     name,
@@ -74,7 +75,9 @@ function makeBridge(id: string, overrides: BridgeOverrides = {}): BridgeView {
       hasToken: true,
       enabled: true,
       orcaBot: 'Assistant',
-      allowedUserIds: '123456',
+      // As the worker reads a stored bridge without the field: restricted when an ID is listed.
+      restricted: allowedUserIds.split(/[\s,;]+/).some((id) => /^-?\d+$/.test(id)),
+      allowedUserIds,
       roles: defaultRoles(),
       roleAssignments: {},
       rolesReviewed: true,
@@ -532,6 +535,7 @@ test('Save sends the edited bridge id and never the on/off state or a name; it p
     {
       bridgeId: 'dev',
       orcaBot: 'Assistant',
+      restricted: false,
       allowedUserIds: '',
       roleAssignments: {},
       roles: defaultRoles(),
@@ -1182,7 +1186,7 @@ function savedInputs(state: BridgeState, saved: SaveConfigInput[]) {
   })
 }
 
-const NEEDS_ID = 'Add at least one Telegram ID, or choose Anyone on Telegram.'
+const NOBODY_YET = /Nobody can talk yet/
 
 test('Anyone on Telegram saves an empty allowlist and keeps the rows as roles', async () => {
   const saved: SaveConfigInput[] = []
@@ -1227,43 +1231,56 @@ test('open with no rows saves no roles for anyone; rows are optional', async () 
   await view.unmount()
 })
 
-test('Only these people and groups without a valid ID is refused with a message', async () => {
+test('Only these people and groups saves with no ID: nobody talks until someone is allowed', async () => {
   const saved: SaveConfigInput[] = []
   const view = await mount(panel, { host: savedInputs(makeState({ bridges: twoBridges() }), saved) })
   await openEditor(view, 'dev')
-  // an empty list means anyone, so the open bridge starts on Anyone on Telegram
   assert.equal(view.valueOf({ label: 'Who can talk' }), 'open')
+  assert.equal(view.find({ text: NOBODY_YET }), null)
 
   // choosing a list gives one empty row; the first row is Full access so the owner keeps access
   await view.select({ label: 'Who can talk' }, 'restricted')
   assert.equal(view.valueOf({ label: 'Telegram ID 1' }), '')
   assert.equal(view.valueOf({ label: 'Role for Telegram ID 1' }), 'full')
+  assert.ok(view.find({ text: NOBODY_YET }))
+  // the empty row is skipped: the bridge is saved restricted with an empty list
   await view.press({ text: 'Save' })
-  assert.equal(saved.length, 0)
-  assert.ok(view.find({ text: NEEDS_ID }))
-  assert.equal(view.find({ label: 'Telegram ID 1' })!.props.invalid, true)
+  assert.equal(saved.length, 1)
+  assert.equal(saved[0].restricted, true)
+  assert.equal(saved[0].allowedUserIds, '')
+  assert.deepEqual(saved[0].roleAssignments, {})
 
+  // Save closes the editor and the stored state is still open here: open it and choose the list again
+  await openEditor(view, 'dev')
+  await view.select({ label: 'Who can talk' }, 'restricted')
+  // a row that is not an ID still refuses the save
   await view.type({ label: 'Telegram ID 1' }, 'abc')
-  assert.equal(view.find({ text: NEEDS_ID }), null)
+  assert.equal(view.find({ text: NOBODY_YET }), null)
   await view.press({ text: 'Save' })
-  assert.equal(saved.length, 0)
+  assert.equal(saved.length, 1)
   assert.ok(view.find({ text: /"abc" is not a Telegram ID/ }))
   assert.equal(view.find({ label: 'Telegram ID 1' })!.props.invalid, true)
 
-  // removing the only row leaves nothing to save
   await view.press({ label: 'Remove Telegram ID 1' })
-  assert.equal(view.find({ label: 'Telegram ID 1' }), null)
-  await view.press({ text: 'Save' })
-  assert.equal(saved.length, 0)
-  assert.ok(view.find({ text: NEEDS_ID }))
-
   await view.press({ text: 'Add person or group' })
   await view.type({ label: 'Telegram ID 1' }, '42')
-  assert.equal(view.find({ text: NEEDS_ID }), null)
   await view.press({ text: 'Save' })
-  assert.equal(saved.length, 1)
-  assert.equal(saved[0].allowedUserIds, '42')
-  assert.deepEqual(saved[0].roleAssignments, { '42': 'full' })
+  assert.equal(saved.length, 2)
+  assert.equal(saved[1].restricted, true)
+  assert.equal(saved[1].allowedUserIds, '42')
+  assert.deepEqual(saved[1].roleAssignments, { '42': 'full' })
+  assert.deepEqual(view.errors, [])
+  await view.unmount()
+})
+
+test('a restricted bridge with an empty list says nobody can talk yet on its card', async () => {
+  const state = makeState({ bridges: [makeBridge('b1', { config: { restricted: true, allowedUserIds: '' } })] })
+  const view = await mount(panel, { host: panelHost({ requests: { 'bridge.getState': () => state } }) })
+  assert.ok(view.find({ text: 'People: none yet' }))
+  assert.equal(view.find({ text: /Open to everyone/ }), null)
+  await openEditor(view, 'b1')
+  assert.equal(view.valueOf({ label: 'Who can talk' }), 'restricted')
+  assert.ok(view.find({ text: NOBODY_YET }))
   assert.deepEqual(view.errors, [])
   await view.unmount()
 })
@@ -1540,6 +1557,7 @@ function rolesHost(
         const bridge = state.bridges.find((b) => b.id === input.bridgeId)!
         state = withBridge(state, input.bridgeId, {
           config: {
+            restricted: input.restricted ?? bridge.config.restricted,
             allowedUserIds: input.allowedUserIds,
             roles: input.roles ?? bridge.config.roles,
             roleAssignments: input.roleAssignments ?? bridge.config.roleAssignments,

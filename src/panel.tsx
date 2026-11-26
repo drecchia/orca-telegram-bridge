@@ -65,7 +65,7 @@ import {
 } from './roles'
 
 type LogFilter = 'all' | 'errors' | 'warnings' | 'debug'
-// Who can talk to the bot: only the listed Telegram IDs, or anyone (saved as an empty list).
+// Who can talk to the bot: only the listed Telegram IDs (the list may start empty), or anyone.
 type AccessMode = 'restricted' | 'open'
 
 // Select option values must be non-empty: these stand for "every bridge" and "no bridge".
@@ -114,7 +114,7 @@ const assignmentRowsDraft = atom<AssignmentRow[]>([])
 const ID_FIELD_WIDTH = 260
 const ROLE_FIELD_WIDTH = 140
 let rowSeq = 0
-// Shown under the rows when Save is refused: no valid ID, or a row that is not an ID.
+// Shown under the rows when Save is refused: a row that is not an ID.
 const allowedIdsError = atom<string | null>(null)
 const rolesDraft = atom<BridgeRole[]>([])
 // Why rows changed role without being touched (their role was deleted or copied over).
@@ -151,7 +151,8 @@ const formDirty = atom(false)
 
 const MAX_LABEL = 500
 const NEW_BOT_LABEL = 'New Telegram bot'
-const NEEDS_ID = 'Add at least one Telegram ID, or choose Anyone on Telegram.'
+const NOBODY_YET =
+  'Nobody can talk yet. Message the bot on Telegram: your ID shows up on the bot\'s card with an Allow button.'
 const REVIEW_ROLES = 'After the update everyone on the list kept full access. Review their roles.'
 const PROMPT_HELPER = 'A hint to the bot, not a lock: only the checkboxes above are enforced. People never see it.'
 const ALL_NEEDS_IDS =
@@ -304,7 +305,7 @@ function newRow(id: string, roleId: string, saved = false): AssignmentRow {
 // it). Open: the IDs that have a role. Assignments outside a restricted list are not shown, so
 // a save never lets them talk.
 function rowsFromConfig(config: BridgeConfig): AssignmentRow[] {
-  const ids = hasAllowedIds(config.allowedUserIds)
+  const ids = config.restricted
     ? telegramIds(config.allowedUserIds)
     : Object.keys(config.roleAssignments)
   return ids.map((id) => newRow(id, config.roleAssignments[id] ?? MEMBER_ROLE_ID, true))
@@ -382,7 +383,7 @@ function hydrateForm(state: BridgeState, force = false): void {
   const bridge = findBridge(state, id)
   if (!bridge) return
   if (!force && read(hydratedFor) === id) return
-  set(accessModeDraft, hasAllowedIds(bridge.config.allowedUserIds) ? 'restricted' : 'open')
+  set(accessModeDraft, bridge.config.restricted ? 'restricted' : 'open')
   set(allowedIdsError, null)
   set(assignmentRowsDraft, rowsFromConfig(bridge.config))
   set(rolesDraft, normalizeRoles(bridge.config.roles))
@@ -529,10 +530,6 @@ async function saveConfig(bridge: BridgeView, orcaBot: string): Promise<void> {
     set(allowedIdsError, clip(`"${notAnId.id}" is not a Telegram ID. IDs are numbers, like 123456789 or -1001234567890.`))
     return
   }
-  if (restricted && rows.length === 0) {
-    set(allowedIdsError, NEEDS_ID)
-    return
-  }
   const roles = read(rolesDraft)
   const known = new Set(roles.map((r) => r.id))
   const roleAssignments: Record<string, string> = {}
@@ -548,7 +545,8 @@ async function saveConfig(bridge: BridgeView, orcaBot: string): Promise<void> {
     const payload: SaveConfigInput = {
       bridgeId: bridge.id,
       orcaBot,
-      // An empty list is how the worker stores "anyone": then the rows only give roles.
+      restricted,
+      // While open the list is empty: then the rows only give roles.
       allowedUserIds: restricted ? ids.join(', ') : '',
       roleAssignments,
       roles,
@@ -812,10 +810,6 @@ export function setup(ctx: PanelContext): void {
   void Promise.all([refresh(), refreshFocus()]).then(reloadAuditIfShown)
 }
 
-function hasAllowedIds(raw: string): boolean {
-  return telegramIds(raw).length > 0
-}
-
 // The card's plain-words line for groups. While the bot is open to everyone the worker reads
 // only messages that call it, even with a Follows the conversation option saved.
 function groupsSummary(bridge: BridgeView, openToEveryone: boolean): string {
@@ -846,7 +840,7 @@ function peopleSummary(bridge: BridgeView, openToEveryone: boolean): string {
   const { config } = bridge
   if (!openToEveryone) {
     const ids = telegramIds(config.allowedUserIds)
-    return `People: ${ids.length} (${roleCounts(config, ids)})`
+    return ids.length > 0 ? `People: ${ids.length} (${roleCounts(config, ids)})` : 'People: none yet'
   }
   const ids = Object.keys(config.roleAssignments)
   return ids.length > 0
@@ -866,7 +860,7 @@ function reviewRolesCallout() {
 // `botName` is the bridge's Orca bot; '' means the first Orca bot found.
 function bridgeCard(bridge: BridgeView, botName: string, isBusy: boolean) {
   const badge = statusMeta(bridge.status)
-  const openToEveryone = !hasAllowedIds(bridge.config.allowedUserIds)
+  const openToEveryone = !bridge.config.restricted
   const blockedUserId = bridge.lastBlockedUserId
   return (
     <Card
@@ -961,7 +955,8 @@ function addRow(): void {
   set(allowedIdsError, null)
 }
 
-// The Who can talk list: one Telegram ID and its role per row. Optional while anyone can talk.
+// The Who can talk list: one Telegram ID and its role per row. Optional in both modes: a
+// restricted bridge with no rows lets nobody in until someone is allowed from the card.
 // `knownNames` puts the name the bridge knows after each ID, matched as the ID is typed.
 function assignmentRows(accessMode: AccessMode, idsError: string | null, knownNames: Record<string, string>) {
   const rows = read(assignmentRowsDraft)
@@ -974,8 +969,8 @@ function assignmentRows(accessMode: AccessMode, idsError: string | null, knownNa
       </Text>
       {rows.map((row, i) => {
         const id = row.id.trim()
-        // NEEDS_ID points at the empty rows; a "not an ID" refusal at the rows that are not IDs.
-        const invalid = idsError !== null && (id === '' ? idsError === NEEDS_ID : !isTelegramId(id))
+        // A "not an ID" refusal points at the rows that are not IDs.
+        const invalid = idsError !== null && id !== '' && !isTelegramId(id)
         const name = Object.hasOwn(knownNames, id) ? knownNames[id] : undefined
         return (
           // Fixed widths: without them the Select sizes itself by the role's label and the ID field
@@ -1287,7 +1282,7 @@ function bridgeEditor(bridge: BridgeView, botName: string, isBusy: boolean, conf
             onChange={(v) => {
               edit(accessModeDraft, v as AccessMode)
               set(allowedIdsError, null)
-              // A restricted list needs an ID, so give the owner a row to type it in.
+              // Give the owner a row to type an ID in; left empty, it is skipped on Save.
               if (v === 'restricted' && read(assignmentRowsDraft).length === 0) addRow()
             }}
           />
@@ -1299,6 +1294,11 @@ function bridgeEditor(bridge: BridgeView, botName: string, isBusy: boolean, conf
                 )}
               </Text>
             </Callout>
+          )}
+          {accessMode === 'restricted' && read(assignmentRowsDraft).every((row) => row.id.trim() === '') && (
+            <Text muted size="xs">
+              {NOBODY_YET}
+            </Text>
           )}
           {assignmentRows(accessMode, idsError, bridge.knownNames)}
           {rolesEditor(bridge)}

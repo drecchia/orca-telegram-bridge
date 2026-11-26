@@ -62,7 +62,9 @@ export type BridgeConfig = {
   enabled: boolean
   // The Orca bot this Telegram bot is pinned to ('' = the first Orca bot found).
   orcaBot: string
-  // Who may talk: '' = anyone on Telegram (they get the Stranger role); else only these user/group IDs.
+  // Who may talk: false = anyone on Telegram (they get the Stranger role); true = only the IDs in
+  // allowedUserIds. A restricted list may be empty: nobody talks until the owner allows someone.
+  restricted: boolean
   allowedUserIds: string
   // What each kind of person may do, and the owner's extra prompt for them. See src/roles.ts.
   roles: BridgeRole[]
@@ -80,7 +82,7 @@ export type BridgeConfig = {
   replyLanguage: ReplyLanguageSetting
   // Off: group messages are ignored and the bot leaves any group it is added to.
   allowGroups: boolean
-  // 'all' takes effect only with a restricted allowedUserIds; while open it acts as 'addressed'.
+  // 'all' takes effect only while restricted; while open it acts as 'addressed'.
   groupMode: GroupMode
   groupReply: GroupReply
   // Voice messages and audio files are transcribed, then sent to the Orca bot as text.
@@ -134,6 +136,7 @@ export type SaveConfigInput = {
   // Absent keeps the current state; the panel switches a bridge with `bridge.setEnabled`.
   enabled?: boolean
   orcaBot: string
+  restricted: boolean
   allowedUserIds: string
   // Absent keeps the saved roles and assignments; saving either marks the roles as reviewed.
   roles?: BridgeRole[]
