@@ -3,7 +3,7 @@
   "id": "telegram-bridge",
   "name": "Telegram Bridge",
   "version": "0.17.0",
-  "description": "Two-way Telegram bot bridge that routes messages to your Orca bots and sends replies back.",
+  "description": "Chat with your Orca bots from Telegram, on any device: one Telegram bot per Orca bot, access lists and roles, groups, voice messages, files both ways and an audit trail. No server or webhook.",
   "license": "MIT",
   "repository": "https://github.com/drecchia/orca-telegram-bridge",
   "homepage": "https://github.com/drecchia/orca-telegram-bridge",
