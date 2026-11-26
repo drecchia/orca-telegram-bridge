@@ -33,7 +33,7 @@
 2. [x] Unaddressed group message, `mentioned`: handoff has the silent line; nothing is sent to the group even if the bot answers text; no typing action.
 3. [x] Unaddressed group message, `helpful`: handoff has the helpful line; a text answer is sent; `NO_REPLY` sends nothing.
 4. [x] Addressed group messages and private chats behave as before.
-5. [x] Panel: no Name field; card title is `@username`; "Anyone on Telegram" saves an empty allowlist; "Only these people" with no ID is refused with a clear message; reply policy is shown only with All messages; Advanced is closed by default.
+5. [x] Panel: no Name field; card title is `@username`; "Anyone on Telegram" saves an empty allowlist; "Only these people" with no ID was refused with a clear message (replaced in #3: it now saves as `restricted` with an empty list, and nobody talks until allowed from the card); reply policy is shown only with All messages; Advanced is closed by default.
 6. [x] `orca plugin test` (183) and `orca plugin check` pass; tsc shows no new error (12 older type-only errors remain).
 
 ## Out of Scope
