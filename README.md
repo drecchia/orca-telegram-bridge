@@ -2,7 +2,7 @@
 
 An Orca `trusted-worker` + `components` sidebar plugin that connects Telegram bots to your local Orca bots for real-time two-way chat. Each **bridge** links one Telegram bot to one Orca bot; run as many bridges as you like.
 
-Fork of the original plugin by [HenryMa96](https://github.com/henryma96/orca-telegram-bridge).
+Based on the original plugin by [HenryMa96](https://github.com/henryma96/orca-telegram-bridge).
 
 <p align="center">
   <img src="docs/images/setup-card.png" alt="The Telegram panel in Orca's right sidebar: Setup, Chats, Logs and Audit tabs, and the card of one bridge with its Active switch, people, groups and voice summary, and an Edit button" width="420">
@@ -51,14 +51,14 @@ Fork of the original plugin by [HenryMa96](https://github.com/henryma96/orca-tel
 
 ## Install
 
-Two ways work today: from this GitHub repository (CLI or Orca Settings) and from a local clone. The Orca catalog way is not available yet.
+Three ways: from the Orca catalog, from this GitHub repository (CLI or Orca Settings), and from a local clone.
 
 Already using `henryma96.telegram-bridge`? Read [Moving from henryma96.telegram-bridge](#moving-from-henryma96telegram-bridge) first.
 
 | Way | Use it when |
 | --- | --- |
-| [From this GitHub repository](#from-this-github-repository-recommended) | You want to use the plugin. This is the normal way today. |
-| [From the Orca catalog](#from-the-orca-catalog-not-available-yet) | Not available yet. This fork is not listed. |
+| [From this GitHub repository](#from-this-github-repository-recommended) | You want to use the plugin. This way works now. |
+| [From the Orca catalog](#from-the-orca-catalog) | You want to install by id. Works once the listing is live on orca.dev/plugins. |
 | [From a local clone](#from-a-local-clone-development) | You want to change the code. |
 
 The plugin key is `drecchia.telegram-bridge`. Orca uses the repository owner (`drecchia`) as the publisher.
@@ -95,15 +95,15 @@ The fingerprint is bound to this plugin, version, files and access. Installing a
 
 Without the CLI: in Orca, open **Settings → Plugins**, choose **Add plugin**, then **From a Git URL…**. Paste `https://github.com/drecchia/orca-telegram-bridge#vX.Y.Z`, choose **Install**, review the access, then enable it.
 
-### From the Orca catalog (not available yet)
+### From the Orca catalog
 
-When the plugin is listed on [orca.dev/plugins](https://orca.dev/plugins), you can install it by id:
+The plugin is being listed in the community directory on [orca.dev/plugins](https://orca.dev/plugins). Install it by id:
 
 ```sh
 orca plugin install drecchia.telegram-bridge
 ```
 
-Today this does not work. This repository is a GitHub fork of [HenryMa96/orca-telegram-bridge](https://github.com/henryma96/orca-telegram-bridge), and the directory leaves forks out ([Add your plugin](https://orca.dev/plugins/add)). The current status is on [orca.dev/plugins/drecchia/orca-telegram-bridge](https://orca.dev/plugins/drecchia/orca-telegram-bridge). Use the GitHub install above. After listing, the approval step is the same. Existing GitHub installs keep updating from GitHub; you do not need to switch.
+The listing status is on [orca.dev/plugins/drecchia/orca-telegram-bridge](https://orca.dev/plugins/drecchia/orca-telegram-bridge). Until the listing is live, the id does not resolve; use the GitHub install above. The approval step is the same. Existing GitHub installs keep updating from GitHub; you do not need to switch.
 
 ### From a local clone (development)
 
@@ -136,10 +136,10 @@ To remove the development copy, run `orca plugin dev unload .`. For checks and r
 
 ### Moving from `henryma96.telegram-bridge`
 
-The upstream plugin has the key `henryma96.telegram-bridge`. This fork has a different key, so Orca treats it as a different plugin. The bot token, settings and stored data do not carry over.
+The upstream plugin has the key `henryma96.telegram-bridge`. This plugin has a different key, so Orca treats it as a different plugin. The bot token, settings and stored data do not carry over.
 
 1. Remove the old plugin. If you installed it from GitHub or the catalog, run `orca plugin uninstall henryma96.telegram-bridge`. If you loaded a local folder (upstream's Setup step), run `orca plugin dev unload <that folder>`. Two copies that poll the same bot token conflict.
-2. Install this fork (see above).
+2. Install this plugin (see above).
 3. Do the [Setup](#setup) steps again.
 
 ## Setup
