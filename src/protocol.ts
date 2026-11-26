@@ -86,6 +86,8 @@ export type BridgeConfig = {
   // 'all' takes effect only while restricted; while open it acts as 'addressed'.
   groupMode: GroupMode
   groupReply: GroupReply
+  // Learning mode: how often (hours, 1-168) each group's saved lines go to the Orca bot in one message.
+  learnBatchHours: number
   // Voice messages and audio files are transcribed, then sent to the Orca bot as text.
   voiceEnabled: boolean
   voiceProvider: VoiceProvider
@@ -154,6 +156,7 @@ export type SaveConfigInput = {
   allowGroups?: boolean
   groupMode?: GroupMode
   groupReply?: GroupReply
+  learnBatchHours?: number
   voiceEnabled?: boolean
   voiceProvider?: VoiceProvider
   voiceModel?: string

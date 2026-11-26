@@ -9,7 +9,7 @@ A fifth **Groups** option: the bot joins a group, sends every message to the Orc
 
 ## Behavior
 Learning = `allowGroups` + `groupMode: 'all'` + `groupReply: 'learn'`.
-- When any group message arrives (text, image, file, voice), then it goes to the Orca bot with the learning line, and nothing goes back to the group: no reply, no typing, no working line, no error or notice line.
+- When any group message arrives (text, image, file, voice), then it is saved for the next batch (see Batching), and nothing goes back to the group: no reply, no typing, no working line, no error or notice line.
 - When the message is an @mention or a reply to the bot, then it is handled like any other line (learning, not answered). The mention is still removed from the text.
 - When the message is a command (`/x` or `/x@thisbot`), then it is not run and not sent to the Orca bot (debug log only). Commands always answer, so learning mode cannot run them.
 - When a button on an older bot message in the group is pressed, then nothing happens (debug log; the tap is not answered).
@@ -21,8 +21,7 @@ Learning = `allowGroups` + `groupMode: 'all'` + `groupReply: 'learn'`.
 - Private chats: unchanged.
 - When privacy mode is on (`/setprivacy`), then Telegram sends the bot only messages meant for it (commands, replies to it), so ordinary group lines never reach learning mode. The panel's privacy callout and the "Added to group" log say so (issue #8).
 
-Learning line in the handoff (replaces the "will be sent back" line; no attachment or language line):
-`You are in learning mode in this Telegram group: read this message and learn from it as your instructions (SOUL.md) say. Never reply, even when the message mentions or asks you: answer exactly NO_REPLY. Nothing you write is sent to Telegram.`
+The learning line replaces the "will be sent back" line in the handoff (no attachment or language line); since issue #14 it goes with each batch (see Batching).
 
 ## API / Interface
 - `src/protocol.ts`: `GroupReply = 'mentioned' | 'helpful' | 'learn'`.
@@ -45,7 +44,22 @@ Learning line in the handoff (replaces the "will be sent back" line; no attachme
 7. [x] Panel: the option saves `allowGroups: true, groupMode: 'all', groupReply: 'learn'`; card says "Groups: learns from the conversation, never answers".
 8. [x] `orca plugin test` (267) and `orca plugin check` pass; tsc shows no error.
 
+## Batching (issue #14, "Modo 1")
+Learning mode no longer sends one Orca bot turn per group message.
+- When a group line arrives in learning mode (after the allowlist and role checks above), then the bridge appends it to the group's file `<learnDir>/.orca-telegram-bridge/learning/<bridge id>/<group id>.txt` (default `learnDir`: the home folder) as `[ISO time] sender: text`; further lines of a message are indented by two spaces. Images, files and voice messages are saved as `[image]`, `[file: name]` or `[voice message]` plus their caption; nothing is downloaded or transcribed. Nothing is dispatched.
+- Durability: the append is flushed to disk (`fsync`) before the Telegram update offset is saved; for a learning group line the early offset save is skipped. When the write fails, the in-memory offset steps back to that update and the error goes to the poll loop, which backs off and gets the update again from Telegram.
+- Setting `learnBatchHours` per bridge (integer 1–168, default 6; out-of-range values are clamped; absent on save keeps the saved value). Panel: **Send what it learned every (hours)**, shown only under the learning option.
+- While polling, a loop checks every minute. When `learnBatchHours` have passed since `learnBatchAt` (stored per bridge; set at the first start), then it stores the new `learnBatchAt` and, for each group with a file, moves `<group id>.txt` to `<group id>.<n>.batch.txt` (under a lock shared with the append, so lines that arrive later start a new `<group id>.txt`) and sends all of that group's batch files in ONE dispatch with the learning line, in the group's Orca chat.
+- When a group's file is missing or empty, then nothing is sent.
+- When the dispatch succeeds, then the batch files are deleted and the group's Orca chat binding is reset (`resetBinding`), so the next batch starts a new Orca chat. The Orca bot's answer is never sent to Telegram.
+- When the dispatch fails (or no Orca bot is found), then the batch files stay and go with the next batch, before any newer lines (warn log).
+- The role prompt of each sender is not added to a batch (one batch has many senders).
+
+Learning line in a batch's handoff (first line `Telegram group messages (chat <id>) [tg:…]`):
+`You are in learning mode in this Telegram group: below is a batch of the messages people sent there since the last batch, one per line as "[time] sender: text" (the further lines of a message are indented). Read them and learn from them as your instructions (SOUL.md) say. Never reply, even when a message mentions or asks you: answer exactly NO_REPLY. Nothing you write is sent to Telegram.`
+
 ## Out of Scope
 - Storing learned patterns anywhere: the Orca bot and its `SOUL.md` decide that.
-- Batching messages to cut the one-turn-per-message cost.
+- Keeping the last messages as context across batches ("Modo 2" in issue #14).
+- Sending the content of images, files and voice messages in a batch.
 - A per-group choice (the option stays per bridge).

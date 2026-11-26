@@ -111,7 +111,8 @@ const STORAGE_AUDIT = 'tg.audit'
 // commandScopes: the user/group ids that got a command menu of their own, so a removed id's menu is deleted.
 // knownNames: the names of the listed ids, shown next to them in the editor.
 // unlistedGroup: the latest group not on a restricted list that the bot heard from, for the panel's Allow.
-const BRIDGE_STORAGE_NAMES = ['offset', 'bindings', 'syncCursors', 'lastBlocked', 'unlistedGroup', 'chatLanguages', 'commandScopes', 'knownNames'] as const
+// learnBatchAt: when learning mode last sent the groups' saved lines to the Orca bot.
+const BRIDGE_STORAGE_NAMES = ['offset', 'bindings', 'syncCursors', 'lastBlocked', 'unlistedGroup', 'chatLanguages', 'commandScopes', 'knownNames', 'learnBatchAt'] as const
 // What 0.4.0 and earlier stored for their single bridge; moved into "Bridge 1" on the first start.
 const LEGACY_SECRET_BOT_TOKEN = 'botToken'
 // chatLanguages, commandScopes and knownNames came later, so 0.4.0 had nothing to move for them.
@@ -191,8 +192,12 @@ export type BridgeDeps = {
   workingLineAfterMs?: number
   workingLineEveryMs?: number
   failedAnswerTtlMs?: number
-  // The clock for audit entries and their 90-day pruning (tests).
+  // The clock for audit entries and their 90-day pruning, and for learning batches (tests).
   now?: () => number
+  // Learning mode's group files go under <learnDir>/.orca-telegram-bridge/learning (default: home).
+  learnDir?: string
+  // How often the learning batch loop checks whether a batch is due (tests).
+  learnCheckMs?: number
 }
 
 type IncomingTelegramImage = {
@@ -592,6 +597,11 @@ function clampTimeout(value: unknown): number {
   return Math.min(1800, Math.max(30, Math.round(n)))
 }
 
+function clampBatchHours(value: unknown): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 6
+  return Math.min(168, Math.max(1, Math.round(n)))
+}
+
 // Bridges read from a store written before roles existed. Their people who chatted before also keep
 // full access, but bindings load later (loadRuntimeState), so the runtime finishes the migration.
 const storedBeforeRoles = new WeakSet<StoredBridge>()
@@ -632,6 +642,7 @@ function readStoredBridge(raw: Record<string, unknown>, id: string, fallbackName
         : raw.groupMode === 'all'
           ? 'helpful'
           : 'mentioned',
+    learnBatchHours: clampBatchHours(raw.learnBatchHours),
     voiceEnabled: typeof raw.voiceEnabled === 'boolean' ? raw.voiceEnabled : false,
     voiceProvider: raw.voiceProvider === 'openai' ? 'openai' : 'openrouter',
     voiceModel: text(raw.voiceModel)
@@ -842,6 +853,11 @@ export class BridgeRuntime {
   private pollLoopPromise: Promise<void> | null = null
   private outboundLoopPromise: Promise<void> | null = null
   private outboundLoopAbort: AbortController | null = null
+  private learnLoopPromise: Promise<void> | null = null
+  // When learning mode last sent the group files (stored as learnBatchAt), and the queue that keeps
+  // an append and a file's move to a batch from overlapping.
+  private learnBatchAt = 0
+  private learnFiles: Promise<void> = Promise.resolve()
   private readonly chatQueues = new Map<string, Promise<void>>()
   private readonly activeTelegramTgChats = new Set<string>()
   private readonly activeTelegramOrcaChats = new Set<string>()
@@ -1061,6 +1077,8 @@ export class BridgeRuntime {
           : input.groupReply === 'helpful' || input.groupReply === 'learn'
             ? input.groupReply
             : 'mentioned',
+      learnBatchHours:
+        input.learnBatchHours === undefined ? prev.learnBatchHours : clampBatchHours(input.learnBatchHours),
       voiceEnabled: input.voiceEnabled ?? prev.voiceEnabled,
       voiceProvider:
         input.voiceProvider === undefined ? prev.voiceProvider : input.voiceProvider === 'openai' ? 'openai' : 'openrouter',
@@ -1262,7 +1280,10 @@ export class BridgeRuntime {
   ): Promise<{ done: Promise<void> } | null> {
     if (update.update_id >= this.updateOffset) {
       this.updateOffset = update.update_id + 1
-      await this.orca.storage.set(this.key('offset'), this.updateOffset)
+      // A learning-mode group line saves the offset only once it is on disk (appendLearningLine), so a
+      // restart never skips a line that is not in its group's file.
+      const learningLine = update.message !== undefined && isGroupChat(update.message.chat) && this.learnsInGroups()
+      if (!learningLine) await this.orca.storage.set(this.key('offset'), this.updateOffset)
     }
     await this.rememberNames(update)
 
@@ -1359,6 +1380,12 @@ export class BridgeRuntime {
     // Each command is checked in handleSlashCommand; anything else is a message and needs 'chat'.
     const isCommand = !image && !unsupportedImage && !voice && !file && text.startsWith('/')
     if (!isCommand && !(await this.mayChat(msg))) return null
+    // Learning mode sends nothing now: the line waits in the group's file for the next batch.
+    if (group && this.learnsInGroups()) {
+      const media = image || unsupportedImage ? '[image]' : voice ? '[voice message]' : file ? `[file: ${file.file_name ?? 'unnamed'}]` : ''
+      await this.appendLearningLine(msg, update.update_id, [media, text].filter(Boolean).join(' '))
+      return null
+    }
     const done = this.enqueueChatWork(tgChatId, async () => {
       try {
         if (unsupportedImage) {
@@ -1875,6 +1902,158 @@ export class BridgeRuntime {
   // Learning mode: groupMode 'all' that never answers in a group, not even when called.
   private learnsInGroups(): boolean {
     return this.config.groupMode === 'all' && this.config.groupReply === 'learn'
+  }
+
+  // Each group's learning lines wait in <dir>/<group id>.txt; a batch moves that file to
+  // <group id>.<n>.batch.txt and keeps it there until the Orca bot has it.
+  private learnDir(): string {
+    return path.join(this.deps.learnDir ?? os.homedir(), '.orca-telegram-bridge', 'learning', this.id)
+  }
+
+  private learnFileOp<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.learnFiles.then(op)
+    this.learnFiles = run.then(
+      () => {},
+      () => {}
+    )
+    return run
+  }
+
+  // Appended and flushed to disk before the update offset is saved. A failed write steps the offset
+  // back and throws, so the poll loop backs off and Telegram sends the line again.
+  private async appendLearningLine(msg: TelegramMessage, updateId: number, content: string): Promise<void> {
+    const tgChatId = String(msg.chat.id)
+    const sender = formatSenderLabel(msg).replace(/\s+/g, ' ')
+    // Lines the sender wrote are indented, so they cannot pass for a line of their own.
+    const line = `[${new Date(msg.date * 1000).toISOString()}] ${sender}: ${content.replace(/\r?\n/g, '\n  ')}\n`
+    try {
+      await this.learnFileOp(async () => {
+        const dir = this.learnDir()
+        await fs.mkdir(dir, { recursive: true, mode: 0o700 })
+        const handle = await fs.open(path.join(dir, `${tgChatId}.txt`), 'a', 0o600)
+        try {
+          await handle.appendFile(line)
+          await handle.sync()
+        } finally {
+          await handle.close()
+        }
+      })
+    } catch (err) {
+      this.updateOffset = Math.min(this.updateOffset, updateId)
+      throw err
+    }
+    await this.orca.storage.set(this.key('offset'), this.updateOffset)
+    await this.appendLog('debug', 'bridge', `Saved message ${msg.message_id} in group ${tgChatId} for the next learning batch.`)
+  }
+
+  private async runLearnBatchLoop(abort: AbortController): Promise<void> {
+    const checkMs = this.deps.learnCheckMs ?? 60_000
+    while (!abort.signal.aborted && !this.disposed) {
+      await sleep(checkMs, abort.signal)
+      if (abort.signal.aborted || this.disposed) break
+      if ((this.deps.now ?? Date.now)() - this.learnBatchAt < this.config.learnBatchHours * 3_600_000) continue
+      try {
+        await this.flushLearningBatches(abort.signal)
+      } catch (err) {
+        if (abort.signal.aborted || this.disposed) break
+        const message = err instanceof Error ? err.message : String(err)
+        await this.appendLog('warn', 'bridge', `Learning batch failed: ${message}`, describeError(err))
+        this.emitState()
+      }
+    }
+  }
+
+  // Sends each group's saved lines to the Orca bot in one message. A group with no lines is skipped.
+  async flushLearningBatches(signal?: AbortSignal): Promise<void> {
+    this.learnBatchAt = (this.deps.now ?? Date.now)()
+    await this.orca.storage.set(this.key('learnBatchAt'), this.learnBatchAt)
+    let names: string[]
+    try {
+      names = await fs.readdir(this.learnDir())
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw err
+    }
+    const chats = new Set(names.map((n) => /^(-?\d+)\./.exec(n)?.[1]).filter((id): id is string => Boolean(id)))
+    for (const tgChatId of chats) {
+      if (signal?.aborted) return
+      await this.flushLearningChat(tgChatId, signal)
+    }
+  }
+
+  // Lines that arrive while the batch is sent go to a new <group id>.txt. On success the batch files
+  // go and the group's Orca chat is reset, so each batch starts a fresh chat; on failure they stay
+  // and go with the next batch.
+  private async flushLearningChat(tgChatId: string, signal?: AbortSignal): Promise<void> {
+    const dir = this.learnDir()
+    const batchNumber = (name: string) => Number(name.slice(tgChatId.length + 1, -'.batch.txt'.length))
+    const batchFiles = async () =>
+      (await fs.readdir(dir))
+        .filter((n) => n.startsWith(`${tgChatId}.`) && n.endsWith('.batch.txt') && Number.isInteger(batchNumber(n)))
+        .sort((a, b) => batchNumber(a) - batchNumber(b))
+    const files = await this.learnFileOp(async () => {
+      const kept = await batchFiles()
+      const next = kept.length > 0 ? batchNumber(kept[kept.length - 1]) + 1 : 1
+      try {
+        await fs.rename(path.join(dir, `${tgChatId}.txt`), path.join(dir, `${tgChatId}.${next}.batch.txt`))
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      }
+      return batchFiles()
+    })
+    const content = (await Promise.all(files.map((n) => fs.readFile(path.join(dir, n), 'utf8')))).join('')
+    const removeFiles = () => Promise.all(files.map((n) => fs.rm(path.join(dir, n), { force: true })))
+    if (!content.trim()) {
+      await removeFiles()
+      return
+    }
+    const lineCount = content.split('\n').filter((l) => l.startsWith('[')).length
+
+    const existing = this.bindings.find((b) => b.tgChatId === tgChatId)
+    const binding = await this.resolveBindingBot(await this.getOrCreateBinding(tgChatId, existing?.ownerUserId ?? tgChatId))
+    if (!binding.botName) {
+      await this.appendLog('error', 'dispatch', `No Orca bot for the learning batch of group ${tgChatId}: kept for the next batch.`)
+      this.emitState()
+      return
+    }
+    await this.appendLog('info', 'dispatch', `[TG group ${tgChatId} -> ${binding.botName}] learning batch of ${lineCount} message(s)`)
+    const stats: DispatchStats = { startedAt: Date.now(), polls: 0 }
+    try {
+      await this.dispatchTraced(stats, {
+        botName: binding.botName,
+        boundChatId: binding.orcaChatId,
+        tgChatId,
+        senderLabel: 'group members',
+        userText: content,
+        unaddressedGroupReply: 'learn',
+        timeoutMs: this.config.replyTimeoutSec * 1000,
+        pollIntervalMs: this.deps.pollIntervalMs,
+        signal,
+        onChatBound: async (chatId, title) => {
+          await this.upsertBinding({
+            tgChatId,
+            botId: binding.botId,
+            botName: binding.botName,
+            orcaChatId: chatId,
+            title,
+            updatedAt: Date.now()
+          })
+        }
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      await this.appendLog(
+        'warn',
+        'dispatch',
+        `Learning batch for group ${tgChatId} failed: ${message}. Its ${lineCount} message(s) stay for the next batch.`,
+        describeError(err, { tgChatId, bot: binding.botName, elapsedMs: Date.now() - stats.startedAt, polls: stats.polls })
+      )
+      this.emitState()
+      return
+    }
+    await removeFiles()
+    await this.appendLog('info', 'dispatch', `[${binding.botName} -> TG ${tgChatId}] Learning batch of ${lineCount} message(s) done: nothing sent to the group.`)
+    await this.resetBinding(tgChatId)
   }
 
   // In groups the bot answers commands for it, mentions of @botUsername and replies to its own
@@ -3385,6 +3564,11 @@ export class BridgeRuntime {
     if (this.config.syncOrcaOutbound) {
       this.ensureOutboundLoopStarted(abort)
     }
+
+    const learnLoop = this.runLearnBatchLoop(abort).finally(() => {
+      if (this.learnLoopPromise === learnLoop) this.learnLoopPromise = null
+    })
+    this.learnLoopPromise = learnLoop
   }
 
   private ensureOutboundLoopStarted(abort: AbortController): void {
@@ -3405,7 +3589,7 @@ export class BridgeRuntime {
 
   private async stopPolling(): Promise<void> {
     // Read the loops before awaiting: loops of a restart during the wait are not ours to wait for.
-    const loops = [this.pollLoopPromise, this.outboundLoopPromise]
+    const loops = [this.pollLoopPromise, this.outboundLoopPromise, this.learnLoopPromise]
     this.pollAbort?.abort()
     this.pollAbort = null
     await Promise.all(loops)
@@ -3851,6 +4035,11 @@ export class BridgeRuntime {
   private async loadRuntimeState(): Promise<void> {
     const savedOffset = await this.orca.storage.get(this.key('offset'))
     this.updateOffset = typeof savedOffset === 'number' ? savedOffset : 0
+
+    // Counted from the first start, so the first batch goes out learnBatchHours later.
+    const savedBatchAt = await this.orca.storage.get(this.key('learnBatchAt'))
+    this.learnBatchAt = typeof savedBatchAt === 'number' ? savedBatchAt : (this.deps.now ?? Date.now)()
+    if (typeof savedBatchAt !== 'number') await this.orca.storage.set(this.key('learnBatchAt'), this.learnBatchAt)
 
     const savedBindings = await this.orca.storage.get(this.key('bindings'))
     this.bindings = Array.isArray(savedBindings) ? (savedBindings as ChatBinding[]) : []

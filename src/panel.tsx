@@ -137,6 +137,7 @@ const replyLanguageDraft = atom<ReplyLanguageSetting>('en')
 const allowGroupsDraft = atom(false)
 const groupModeDraft = atom<GroupMode>('addressed')
 const groupReplyDraft = atom<GroupReply>('mentioned')
+const learnBatchHoursDraft = atom('6')
 const groupAuditNoticeDraft = atom(false)
 const voiceEnabledDraft = atom(false)
 const voiceProviderDraft = atom<VoiceProvider>('openrouter')
@@ -401,6 +402,7 @@ function hydrateForm(state: BridgeState, force = false): void {
   set(allowGroupsDraft, bridge.config.allowGroups)
   set(groupModeDraft, bridge.config.groupMode)
   set(groupReplyDraft, bridge.config.groupReply)
+  set(learnBatchHoursDraft, String(bridge.config.learnBatchHours))
   set(groupAuditNoticeDraft, bridge.config.groupAuditNotice)
   set(voiceEnabledDraft, bridge.config.voiceEnabled)
   set(voiceProviderDraft, bridge.config.voiceProvider)
@@ -546,6 +548,7 @@ async function saveConfig(bridge: BridgeView, orcaBot: string): Promise<void> {
   set(saveError, null)
   try {
     const parsedTimeout = Number.parseInt(read(timeoutDraft), 10)
+    const parsedBatchHours = Number.parseInt(read(learnBatchHoursDraft), 10)
     const cleanToken = read(tokenDraft).trim()
     const cleanVoiceKey = read(voiceKeyDraft).trim()
     const payload: SaveConfigInput = {
@@ -563,6 +566,7 @@ async function saveConfig(bridge: BridgeView, orcaBot: string): Promise<void> {
       allowGroups: read(allowGroupsDraft),
       groupMode: read(groupModeDraft),
       groupReply: read(groupReplyDraft),
+      learnBatchHours: Number.isFinite(parsedBatchHours) ? parsedBatchHours : 6,
       groupAuditNotice: read(groupAuditNoticeDraft),
       voiceEnabled: read(voiceEnabledDraft),
       voiceProvider: read(voiceProviderDraft),
@@ -1353,11 +1357,25 @@ function bridgeEditor(bridge: BridgeView, botName: string, isBusy: boolean, conf
               }
             }}
           />
-          {followsAll && (
+          {followsAll && groupChoice !== 'all-learn' && (
             <Text muted size="xs">
               Following the conversation sends every group message to the Orca bot: one bot turn
               per message.
             </Text>
+          )}
+          {groupChoice === 'all-learn' && (
+            <Stack gap="xs">
+              <Input
+                label="Send what it learned every (hours)"
+                value={read(learnBatchHoursDraft)}
+                placeholder="6"
+                onChange={(v) => edit(learnBatchHoursDraft, v)}
+              />
+              <Text muted size="xs">
+                The bridge saves each group's messages to a file and sends them to the Orca bot in one
+                turn every this many hours (1 to 168), in a new Orca chat each time.
+              </Text>
+            </Stack>
           )}
           {followsAll && accessMode === 'open' && (
             <Text muted size="xs">

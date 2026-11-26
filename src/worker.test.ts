@@ -1891,7 +1891,7 @@ type BridgeSeed = {
   token?: string
   voiceKey?: string
   config?: Record<string, JsonValue>
-  state?: Partial<Record<'offset' | 'bindings' | 'syncCursors' | 'lastBlocked' | 'commandScopes' | 'knownNames', JsonValue>>
+  state?: Partial<Record<'offset' | 'bindings' | 'syncCursors' | 'lastBlocked' | 'commandScopes' | 'knownNames' | 'learnBatchAt', JsonValue>>
 }
 
 function bridgesHost(
@@ -2866,6 +2866,7 @@ test('a 0.4.0 setup becomes "Bridge 1" with its token, settings, chats and offse
       allowGroups: true,
       groupMode: 'addressed',
       groupReply: 'mentioned',
+      learnBatchHours: 6,
       // Voice did not exist in 0.4.0: off, provider default, no key.
       voiceEnabled: false,
       voiceProvider: 'openrouter',
@@ -3412,25 +3413,42 @@ test('the open-panel command uses the dev copy key when Orca lists two copies, e
 })
 
 // One bridge with these config fields; testConnection runs getMe, so the bot knows its @username.
+// Learning mode's group files go under a temp dir, given to `run` as `learnDir`.
 async function withGroupBridge(
   config: Record<string, JsonValue>,
-  run: (controller: BridgeRuntime, deps: ReturnType<typeof makeMockDeps>, manager: BridgeManager) => Promise<void>
+  run: (
+    controller: BridgeRuntime,
+    deps: ReturnType<typeof makeMockDeps>,
+    manager: BridgeManager,
+    learnDir: string,
+    host: MockHost
+  ) => Promise<void>
 ): Promise<void> {
   const host = bridgesHost([{ id: 'b-group001', token: '123456:TEST_TOKEN', config }])
   const deps = makeMockDeps()
+  const learnDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tg-learn-'))
   const { manager, controller, worker } = await mountController(host, {
     telegram: deps.telegram,
     orcaCli: deps.orcaCli,
     pollIntervalMs: 1,
-    logFlushMs: 0
+    logFlushMs: 0,
+    learnDir
   })
   try {
     await controller.testConnection()
-    await run(controller, deps, manager)
+    await run(controller, deps, manager, learnDir, host)
     assert.deepEqual(worker.refusals, [])
   } finally {
     await worker.deactivate()
+    await fs.rm(learnDir, { recursive: true, force: true })
   }
+}
+
+// The files learning mode keeps for the groups of bridge `bridgeId`, by name, with their text.
+async function learnFiles(learnDir: string, bridgeId = 'b-group001'): Promise<Record<string, string>> {
+  const dir = path.join(learnDir, '.orca-telegram-bridge', 'learning', bridgeId)
+  const names = await fs.readdir(dir).catch(() => [] as string[])
+  return Object.fromEntries(await Promise.all(names.map(async (n) => [n, await fs.readFile(path.join(dir, n), 'utf8')])))
 }
 
 // Telegram's update when someone adds the bot to the group.
@@ -3537,11 +3555,13 @@ test('any line from an unlisted group offers it to allow, even a command or a li
     await controller.allowUserId(String(GROUP_ID))
     assert.equal(controller.view().unlistedGroup, null)
     await controller.handleIncomingUpdate(groupUpdate(3, 555, 'still failing'))
+    await controller.flushLearningBatches()
     assert.equal(deps.sentToBots.length, 1)
   })
   // A listed person's line still reaches the bot, and the group is offered for everyone else.
   await withGroupBridge(config, async (controller, deps) => {
     await controller.handleIncomingUpdate(groupUpdate(1, 777888, 'the deploy failed'))
+    await controller.flushLearningBatches()
     assert.equal(deps.sentToBots.length, 1)
     assert.deepEqual(controller.view().unlistedGroup, team)
   })
@@ -3950,35 +3970,136 @@ test("'all': a message addressed to the bot is answered as before, in both reply
 })
 
 const LEARN_LINE =
-  'You are in learning mode in this Telegram group: read this message and learn from it as your instructions (SOUL.md) say. Never reply, even when the message mentions or asks you: answer exactly NO_REPLY. Nothing you write is sent to Telegram.'
+  'You are in learning mode in this Telegram group: below is a batch of the messages people sent there since the last batch, one per line as "[time] sender: text" (the further lines of a message are indented). Read them and learn from them as your instructions (SOUL.md) say. Never reply, even when a message mentions or asks you: answer exactly NO_REPLY. Nothing you write is sent to Telegram.'
 const LEARNING = { allowGroups: true, groupMode: 'all', groupReply: 'learn', allowedUserIds: '777888' }
+const LEARN_FILE = `${GROUP_ID}.txt`
 
-test("'all' + learn: every line reaches the bot to learn from, even when called, and nothing is posted in the group", async () => {
-  await withGroupBridge(LEARNING, async (controller, deps, manager) => {
+test("'all' + learn: every line waits in the group's file, even when called; a batch sends them all in one turn and posts nothing", async () => {
+  await withGroupBridge(LEARNING, async (controller, deps, manager, learnDir) => {
     const reply = { message_id: 90, from: BOT_USER, chat: { id: GROUP_ID, type: 'supergroup' as const, title: 'Team' }, date: 999 }
     await within(controller.handleIncomingUpdate(groupUpdate(1, 777888, 'the deploy failed again')), 'plain line')
     await within(controller.handleIncomingUpdate(groupUpdate(2, 777888, '@demo_orca_bot what is due today?')), 'mention')
-    await within(controller.handleIncomingUpdate(groupUpdate(3, 777888, 'and this?', { reply_to_message: reply })), 'reply')
-    assert.equal(deps.sentToBots.length, 3)
-    for (const sent of deps.sentToBots) {
-      assert.ok(sent.body.includes(LEARN_LINE))
-      assert.equal(sent.body.includes('To send an image or file'), false)
-    }
-    assert.equal(lastBodyLine(deps), 'and this?')
-    assert.ok(deps.sentToBots[1].body.includes('what is due today?'))
-    // The mock bot answers every line; the bridge keeps all of it out of the group.
-    assert.deepEqual(groupMessages(deps), [])
-    assert.equal(typed(deps), false)
-    assert.ok(manager.getState().logs.some((e) => /in 'learn' mode: reply of \d+ chars not sent\.$/.test(e.message)))
-
-    // A command is neither run nor sent on; a stranger calling the bot is not told off.
+    await within(controller.handleIncomingUpdate(groupUpdate(3, 777888, 'and this?\nsecond line', { reply_to_message: reply })), 'reply')
+    // A command is neither run nor saved; a stranger calling the bot is not told off.
     await controller.handleIncomingUpdate(groupUpdate(4, 777888, '/status'))
     await controller.handleIncomingUpdate(groupUpdate(5, 777888, '/new@demo_orca_bot'))
     await controller.handleIncomingUpdate(groupUpdate(6, 555, '@demo_orca_bot hello'))
-    assert.equal(deps.sentToBots.length, 3)
+    assert.equal(deps.sentToBots.length, 0)
+    const when = new Date(1000 * 1000).toISOString()
+    const saved = [
+      `[${when}] Member (777888): the deploy failed again`,
+      `[${when}] Member (777888): what is due today?`,
+      `[${when}] Member (777888): and this?`,
+      '  second line'
+    ].join('\n')
+    assert.deepEqual(await learnFiles(learnDir), { [LEARN_FILE]: `${saved}\n` })
+
+    await within(controller.flushLearningBatches(), 'batch')
+    assert.equal(deps.sentToBots.length, 1)
+    const body = deps.sentToBots[0].body
+    assert.ok(body.startsWith(`Telegram group messages (chat ${GROUP_ID}) [tg:${GROUP_ID}:`))
+    assert.ok(body.includes(LEARN_LINE))
+    assert.equal(body.includes('To send an image or file'), false)
+    assert.ok(body.endsWith(saved))
+    // The mock bot answers; the bridge keeps it out of the group, empties the file and resets the chat.
+    assert.deepEqual(groupMessages(deps), [])
     assert.deepEqual(deps.sentMessages, [])
+    assert.equal(typed(deps), false)
     assert.equal(controller.view().lastBlockedUserId, null)
+    assert.deepEqual(await learnFiles(learnDir), {})
+    assert.equal(controller.view().bindings.some((b) => b.tgChatId === String(GROUP_ID)), false)
+    assert.ok(manager.getState().logs.some((e) => e.message === `[Assistant -> TG ${GROUP_ID}] Learning batch of 3 message(s) done: nothing sent to the group.`))
+
+    // No new line: the next batch sends nothing.
+    await controller.flushLearningBatches()
+    assert.equal(deps.sentToBots.length, 1)
+    // The next batch starts a new Orca chat.
+    await controller.handleIncomingUpdate(groupUpdate(7, 777888, 'next day'))
+    await controller.flushLearningBatches()
+    assert.equal(deps.sentToBots.length, 2)
+    assert.equal(deps.sentToBots[1].chatId, 'new')
+    assert.ok(deps.sentToBots[1].body.endsWith(`Member (777888): next day`))
   })
+})
+
+test("'all' + learn: a failed batch keeps its lines, and the next batch sends them with the newer ones", async () => {
+  await withGroupBridge(LEARNING, async (controller, deps, manager, learnDir) => {
+    await controller.handleIncomingUpdate(groupUpdate(1, 777888, 'first'))
+    failFirstSend(deps)
+    await controller.flushLearningBatches()
+    assert.equal(deps.sentToBots.length, 0)
+    assert.ok(manager.getState().logs.some((e) => e.level === 'warn' && /Learning batch for group -100500 failed: .*Its 1 message\(s\) stay for the next batch\./.test(e.message)))
+    // Lines that come after the failed batch go to a new file; nothing is lost.
+    await controller.handleIncomingUpdate(groupUpdate(2, 777888, 'second'))
+    assert.deepEqual(Object.keys(await learnFiles(learnDir)).sort(), [`${GROUP_ID}.1.batch.txt`, LEARN_FILE])
+
+    await controller.flushLearningBatches()
+    assert.equal(deps.sentToBots.length, 1)
+    assert.match(deps.sentToBots[0].body, /Member \(777888\): first\n\[[^\]]+\] Member \(777888\): second$/)
+    assert.deepEqual(await learnFiles(learnDir), {})
+  })
+})
+
+test("'all' + learn: the offset is saved only once the line is on disk; a failed write gets the line again", async () => {
+  await withGroupBridge(LEARNING, async (controller, deps, _manager, learnDir, host) => {
+    await controller.handleIncomingUpdate(groupUpdate(5, 777888, 'kept'))
+    assert.equal(host.data().storage['tg.b-group001.offset'], 6)
+    assert.ok((await learnFiles(learnDir))[LEARN_FILE].endsWith('kept\n'))
+
+    // The bridge's folder is a file now, so the write fails: the update is not acknowledged.
+    const dir = path.join(learnDir, '.orca-telegram-bridge', 'learning', 'b-group001')
+    await fs.rm(dir, { recursive: true })
+    await fs.writeFile(dir, 'not a folder')
+    await assert.rejects(controller.handleIncomingUpdate(groupUpdate(6, 777888, 'lost?')))
+    assert.equal(host.data().storage['tg.b-group001.offset'], 6)
+    assert.equal(deps.sentToBots.length, 0)
+  })
+})
+
+test("'all' + learn: images, files and voice notes are saved as a mark with their caption", async () => {
+  await withGroupBridge(LEARNING, async (controller, deps, _manager, learnDir) => {
+    await controller.handleIncomingUpdate(
+      groupUpdate(1, 777888, '', { text: undefined, caption: 'the chart', photo: [{ file_id: 'p1', file_unique_id: 'u1', width: 10, height: 10 }] })
+    )
+    await controller.handleIncomingUpdate(
+      groupUpdate(2, 777888, '', { text: undefined, document: { file_id: 'd1', file_unique_id: 'u2', file_name: 'report.pdf', mime_type: 'application/pdf' } })
+    )
+    await controller.handleIncomingUpdate(
+      groupUpdate(3, 777888, '', { text: undefined, voice: { file_id: 'v1', file_unique_id: 'u3', duration: 3 } })
+    )
+    const lines = (await learnFiles(learnDir))[LEARN_FILE].trim().split('\n').map((l) => l.replace(/^\[[^\]]+\] /, ''))
+    assert.deepEqual(lines, ['Member (777888): [image] the chart', 'Member (777888): [file: report.pdf]', 'Member (777888): [voice message]'])
+    assert.equal(deps.sentToBots.length, 0)
+  })
+})
+
+test("'all' + learn: while polling, a batch goes out once learnBatchHours have passed", async () => {
+  let clock = 1_000_000
+  const host = bridgesHost([
+    {
+      id: 'b-learnpoll',
+      token: '123456:TEST_TOKEN',
+      config: { ...LEARNING, enabled: true, learnBatchHours: 2 },
+      state: { learnBatchAt: clock }
+    }
+  ])
+  const deps = makeMockDeps({ telegram: { getUpdates: scriptedGetUpdates([[groupUpdate(1, 777888, 'polled line')]]) } })
+  const learnDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tg-learn-'))
+  const { controller, worker } = await mountBridge(host, deps, { learnDir, learnCheckMs: 1, now: () => clock })
+  try {
+    await eventually(() => host.data().storage['tg.b-learnpoll.offset'] === 2, 'line saved')
+    clock += 2 * 3_600_000 - 1
+    await pause(20)
+    assert.equal(deps.sentToBots.length, 0)
+    clock += 1
+    await eventually(() => deps.sentToBots.length === 1, 'batch sent')
+    assert.ok(deps.sentToBots[0].body.endsWith('Member (777888): polled line'))
+    await eventually(() => host.data().storage['tg.b-learnpoll.learnBatchAt'] === clock, 'batch time stored')
+  } finally {
+    await within(controller.dispose(), 'dispose')
+    await worker.deactivate()
+    await fs.rm(learnDir, { recursive: true, force: true })
+  }
 })
 
 test("'all' + learn: a button on an older group message does nothing", async () => {
@@ -4148,6 +4269,17 @@ test('a save without a name keeps it; groupReply defaults to mentioned, round-tr
     await worker.request('bridge.saveConfig', saveInput(controller, { groupReply: 'learn' }))
     assert.equal(controller.view().config.groupReply, 'learn')
     assert.equal((host.data().storage.bridges as { groupReply: string }[])[0].groupReply, 'learn')
+
+    // The learning batch interval: 6 hours by default, kept when absent, held to 1-168.
+    assert.equal(controller.view().config.learnBatchHours, 6)
+    await worker.request('bridge.saveConfig', saveInput(controller, { learnBatchHours: 12 }))
+    assert.equal((host.data().storage.bridges as { learnBatchHours: number }[])[0].learnBatchHours, 12)
+    await worker.request('bridge.saveConfig', saveInput(controller, {}))
+    assert.equal(controller.view().config.learnBatchHours, 12)
+    await worker.request('bridge.saveConfig', saveInput(controller, { learnBatchHours: 0 }))
+    assert.equal(controller.view().config.learnBatchHours, 1)
+    await worker.request('bridge.saveConfig', saveInput(controller, { learnBatchHours: 1000 }))
+    assert.equal(controller.view().config.learnBatchHours, 168)
     assert.deepEqual(worker.refusals, [])
   } finally {
     await worker.deactivate()
