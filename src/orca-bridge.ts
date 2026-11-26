@@ -730,14 +730,14 @@ function findRequestReply(
 }
 
 // The reply rule for a group message not addressed to the bot (groupMode 'all'); it replaces the
-// usual "will be sent back" line. In learning mode every group message gets it.
+// usual "will be sent back" line. In learning mode it goes with each batch of a group's messages.
 const UNADDRESSED_GROUP_LINES: Record<GroupReply, string> = {
   mentioned:
     'This group message was not addressed to you. Read it for context only and do not reply: answer exactly NO_REPLY. Nothing you write is sent to Telegram.',
   helpful:
     'This group message was not addressed to you. Reply only if you can clearly help with it; otherwise answer exactly NO_REPLY. A reply is sent back to the group (use standard Markdown tables; avoid wide ASCII box tables).',
   learn:
-    'You are in learning mode in this Telegram group: read this message and learn from it as your instructions (SOUL.md) say. Never reply, even when the message mentions or asks you: answer exactly NO_REPLY. Nothing you write is sent to Telegram.'
+    'You are in learning mode in this Telegram group: below is a batch of the messages people sent there since the last batch, one per line as "[time] sender: text" (the further lines of a message are indented). Read them and learn from them as your instructions (SOUL.md) say. Never reply, even when a message mentions or asks you: answer exactly NO_REPLY. Nothing you write is sent to Telegram.'
 }
 
 export async function dispatchToOrcaBotAndWait(
@@ -793,7 +793,9 @@ export async function dispatchToOrcaBotAndWait(
   const bodyParts = [
     // Not "owner": with open access and groups the sender can be anyone, and the Orca bot must not
     // give them the owner's trust.
-    `Telegram message from user (${params.senderLabel}, chat ${params.tgChatId}) ${requestMarker}.`,
+    groupReply === 'learn'
+      ? `Telegram group messages (chat ${params.tgChatId}) ${requestMarker}.`
+      : `Telegram message from user (${params.senderLabel}, chat ${params.tgChatId}) ${requestMarker}.`,
     // A group message not addressed to the bot gets its group rule instead of "will be sent back",
     // so the two never contradict each other.
     groupReply

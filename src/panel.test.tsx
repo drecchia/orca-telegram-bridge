@@ -89,6 +89,7 @@ function makeBridge(id: string, overrides: BridgeOverrides = {}): BridgeView {
       allowGroups: false,
       groupMode: 'addressed',
       groupReply: 'mentioned',
+      learnBatchHours: 6,
       groupAuditNotice: false,
       voiceEnabled: false,
       voiceProvider: 'openrouter',
@@ -569,6 +570,7 @@ test('Save sends the edited bridge id and never the on/off state or a name; it p
       allowGroups: false,
       groupMode: 'addressed',
       groupReply: 'mentioned',
+      learnBatchHours: 6,
       groupAuditNotice: false,
       voiceEnabled: false,
       voiceProvider: 'openrouter',
@@ -1415,7 +1417,8 @@ test('one group choice says what the bot reads and when it answers, and Save map
           ...bridge.config,
           allowGroups: input.allowGroups!,
           groupMode: input.groupMode!,
-          groupReply: input.groupReply!
+          groupReply: input.groupReply!,
+          learnBatchHours: input.learnBatchHours!
         }
         return state
       }
@@ -1458,13 +1461,19 @@ test('one group choice says what the bot reads and when it answers, and Save map
   await view.press({ text: 'Save' })
   assert.deepEqual([saved[2].allowGroups, saved[2].groupMode, saved[2].groupReply], [true, 'all', 'mentioned'])
 
+  // The batch interval shows only for learning mode, which sends no turn per message.
+  assert.equal(view.find({ label: 'Send what it learned every (hours)' }), null)
   await openEditor(view, 'b1')
   await view.select(groups, 'all-learn')
-  assert.ok(view.find({ text: /one bot turn per message/ }))
+  assert.equal(view.find({ text: /one bot turn per message/ }), null)
+  assert.equal(view.valueOf({ label: 'Send what it learned every (hours)' }), '6')
+  await view.type({ label: 'Send what it learned every (hours)' }, '12', { replace: true })
   await view.press({ text: 'Save' })
   assert.deepEqual([saved[3].allowGroups, saved[3].groupMode, saved[3].groupReply], [true, 'all', 'learn'])
+  assert.equal(saved[3].learnBatchHours, 12)
   await openEditor(view, 'b1')
   assert.equal(view.valueOf(groups), 'all-learn')
+  assert.equal(view.valueOf({ label: 'Send what it learned every (hours)' }), '12')
   assert.deepEqual(view.errors, [])
   assert.deepEqual(view.warnings, [])
   await view.unmount()
