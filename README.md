@@ -166,7 +166,7 @@ Why not a connector inside Orca's **Bot settings → Connectors**? A plugin cann
 Each bridge has its own **Who can talk** choice (Setup tab → the bridge's **Edit**). Access to one Telegram bot says nothing about another:
 
 - **Anyone on Telegram: open to everyone.** Any Telegram user who finds your bot, and any group it is in, can use it. The panel shows an **Open to everyone** warning on the card.
-- **Only these people and groups: restricted.** Only the listed IDs can use the bot. A user ID allows that person in private chats and in any group. A group ID (a negative number, e.g. `-1001234567890`) allows every member of that group. Saving this choice needs at least one ID.
+- **Only these people and groups: restricted.** Only the listed IDs can use the bot. A user ID allows that person in private chats and in any group. A group ID (a negative number, e.g. `-1001234567890`) allows every member of that group. The list may be empty: then nobody can talk until you allow someone (see below).
 
 Each listed person or group has a **role** (see [Roles](#roles)) that sets what they may do. With **Anyone on Telegram**, everyone not listed gets the **Stranger** role, which can chat but can never run automations, change sync or reach your Orca chats.
 
@@ -174,11 +174,11 @@ Each listed person or group has a **role** (see [Roles](#roles)) that sets what 
 
 ### Restrict access
 
-1. Ask each person to send any message to the bot (in a group, mention the bot).
-2. While the bot is open, it answers them. To restrict it, add at least one ID: your own first. Your ID: send a message to the bot, then read it in the panel's **Chats** tab (`TG <ID> -> …`), or ask a bot such as `@userinfobot`.
-3. Choose **Only these people and groups**, add a row per ID (**Add person or group**), pick each one's role, and click **Save**.
+1. Choose **Only these people and groups** and click **Save**. You may add IDs now (**Add person or group**, one row per ID, with a role) or leave the list empty.
+2. Ask each person to send any message to the bot (in a group, mention the bot). Do the same yourself if you do not know your ID.
+3. An unknown person gets one short reply with their Telegram ID (at most once a minute), and the panel shows a banner: `User <ID> messaged your bot but is not in the allowlist.` Click **Allow \<ID\>** to add them with the **Member** role. The banner shows only the latest unknown person. To give yourself more rights, change your role in **Edit**.
 
-Once the list is restricted, an unknown person gets one short reply with their Telegram ID (at most once a minute), and the panel shows a banner: `User <ID> messaged your bot but is not in the allowlist.` Click **Allow \<ID\>** to add them with the **Member** role. The banner shows only the latest unknown person.
+Other ways to find an ID: the panel's **Chats** tab (`TG <ID> -> …`) while the bot is open, or a bot such as `@userinfobot`.
 
 A saved ID shows the name the bot knows for it in the same field, for example `175844659 @ana_dev`: the person's `@username` (or first and last name), or the group's title. A saved ID cannot be edited; to change one, remove its row and add another. The bridge learns names from messages, and asks Telegram once when it connects and after **Save** for IDs that have none yet. Telegram answers only for people who have opened the bot and groups the bot is in; the others show the ID alone until they write. Only listed IDs are kept, on this computer.
 

@@ -348,12 +348,18 @@ async function mountController(host: MockHost, deps: BridgeDeps) {
 }
 
 // The panel always sends every field of the bridge form; unchanged fields keep the bridge's values.
+// A test that sets only the list gets the mode the panel would show for it: restricted when it lists an ID.
 function saveInput(bridge: BridgeRuntime, fields: Partial<SaveConfigInput>): SaveConfigInput {
   const { config } = bridge.view()
+  const restricted =
+    fields.allowedUserIds === undefined
+      ? config.restricted
+      : fields.allowedUserIds.split(/[\s,;]+/).some((id) => /^-?\d+$/.test(id))
   return {
     bridgeId: bridge.id,
     name: config.name,
     orcaBot: config.orcaBot,
+    restricted,
     allowedUserIds: config.allowedUserIds,
     proxyUrl: config.proxyUrl,
     replyTimeoutSec: config.replyTimeoutSec,
@@ -671,6 +677,7 @@ test('worker activates cleanly without token and saves config', async () => {
     botToken: '123456:TEST_TOKEN',
     enabled: false,
     orcaBot: 'Assistant',
+    restricted: true,
     allowedUserIds: '42',
     proxyUrl: '',
     replyTimeoutSec: 120,
@@ -2534,6 +2541,23 @@ test('with a restricted allowlist a stranger is blocked and told only once, howe
   })
 })
 
+test('restricted with an empty list blocks everyone until the owner allows the blocked ID', async () => {
+  await withAccess('', async (controller, deps, manager) => {
+    await manager.saveConfig(saveInput(controller, { restricted: true, allowedUserIds: '' }))
+    assert.equal(controller.view().config.restricted, true)
+    await controller.handleIncomingUpdate(textUpdate(1, 777888, 'hi'))
+    assert.equal(deps.sentToBots.length, 0)
+    assert.equal(deps.sentMessages[0]?.text, t('en').unauthorized('777888'))
+    assert.equal(controller.view().lastBlockedUserId, '777888')
+
+    await controller.allowUserId('777888')
+    assert.equal(controller.view().config.allowedUserIds, '777888')
+    await controller.handleIncomingUpdate(textUpdate(2, 777888, 'hello again'))
+    assert.equal(deps.sentToBots.length, 1)
+    assert.equal(lastBodyLine(deps), 'hello again')
+  })
+})
+
 test('a listed group lets an unlisted member reach the Orca bot by mentioning it', async () => {
   await withAccess(String(GROUP_ID), async (controller, deps) => {
     await controller.handleIncomingUpdate(
@@ -2827,6 +2851,7 @@ test('a 0.4.0 setup becomes "Bridge 1" with its token, settings, chats and offse
       hasToken: true,
       enabled: true,
       orcaBot: 'Daily standup notes',
+      restricted: true,
       allowedUserIds: '777888',
       // Roles did not exist in 0.4.0: everyone allowed keeps full access until the owner reviews.
       roles: defaultRoles(),

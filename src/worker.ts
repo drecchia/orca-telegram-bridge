@@ -262,9 +262,10 @@ function parseAllowedIds(raw: string): Set<string> {
   )
 }
 
-// An empty allowlist opens the bridge to everyone; otherwise the sender or the chat must be listed.
-function isAllowed(allowed: Set<string>, fromId: string, tgChatId: string): boolean {
-  return allowed.size === 0 || allowed.has(fromId) || allowed.has(tgChatId)
+// An open bridge lets everyone in; a restricted one only the listed sender or chat (none while
+// the list is empty).
+function isAllowed(restricted: boolean, allowed: Set<string>, fromId: string, tgChatId: string): boolean {
+  return !restricted || allowed.has(fromId) || allowed.has(tgChatId)
 }
 
 // The ids whose names are kept: the allowlist and everyone with a role, so strangers on an open
@@ -310,7 +311,7 @@ function commandsForRole(role: BridgeRole, isGroup: boolean): TelegramCommandNam
 function menuKey(config: BridgeConfig): string {
   return JSON.stringify([
     config.replyLanguage,
-    parseAllowedIds(config.allowedUserIds).size === 0,
+    config.restricted,
     config.roles,
     config.roleAssignments
   ])
@@ -488,13 +489,13 @@ function changedConfigFields(prev: BridgeConfig, next: BridgeConfig): string[] {
 
 // "restricted; added 42, 43; removed 7": the access mode when it changed, then the ids. Telegram ids
 // are not secrets. Null when the save left access as it was.
-function accessChange(prevIds: string, nextIds: string): string | null {
-  const before = parseAllowedIds(prevIds)
-  const after = parseAllowedIds(nextIds)
+function accessChange(prev: BridgeConfig, next: BridgeConfig): string | null {
+  const before = parseAllowedIds(prev.allowedUserIds)
+  const after = parseAllowedIds(next.allowedUserIds)
   const added = [...after].filter((id) => !before.has(id))
   const removed = [...before].filter((id) => !after.has(id))
   const parts: string[] = []
-  if ((before.size === 0) !== (after.size === 0)) parts.push(after.size === 0 ? 'open' : 'restricted')
+  if (prev.restricted !== next.restricted) parts.push(next.restricted ? 'restricted' : 'open')
   if (added.length > 0) parts.push(`added ${added.join(', ')}`)
   if (removed.length > 0) parts.push(`removed ${removed.join(', ')}`)
   return parts.length > 0 ? parts.join('; ') : null
@@ -608,6 +609,8 @@ function readStoredBridge(raw: Record<string, unknown>, id: string, fallbackName
     name: text(raw.name) || fallbackName,
     enabled: typeof raw.enabled === 'boolean' ? raw.enabled : false,
     orcaBot: text(raw.orcaBot),
+    // Stored before the access mode was kept apart from the list: a listed ID meant restricted.
+    restricted: typeof raw.restricted === 'boolean' ? raw.restricted : parseAllowedIds(allowedUserIds).size > 0,
     allowedUserIds,
     roles,
     roleAssignments: beforeRoles
@@ -1028,6 +1031,7 @@ export class BridgeRuntime {
       hasToken: Boolean(this.cachedToken),
       enabled: input.enabled ?? prev.enabled,
       orcaBot: input.orcaBot.trim(),
+      restricted: input.restricted,
       allowedUserIds: input.allowedUserIds.trim(),
       roles,
       // Assignments to a role that no longer exists are dropped.
@@ -1176,6 +1180,7 @@ export class BridgeRuntime {
     const existing = parseAllowedIds(this.config.allowedUserIds)
     existing.add(clean)
     this.config.allowedUserIds = Array.from(existing).join(', ')
+    this.config.restricted = true
     // Allowed from the panel's Allow button: a Member, unless the owner already gave them a role.
     if (!this.config.roleAssignments[clean]) {
       this.config.roleAssignments = { ...this.config.roleAssignments, [clean]: MEMBER_ROLE_ID }
@@ -1281,7 +1286,7 @@ export class BridgeRuntime {
         'debug',
         'bridge',
         this.learnsInGroups()
-          ? `Ignored message ${msg.message_id} in group ${tgChatId}: learning mode reads only conversation lines, and only with an ID list.`
+          ? `Ignored message ${msg.message_id} in group ${tgChatId}: learning mode reads only conversation lines, and only while restricted.`
           : `Ignored message ${msg.message_id} in group ${tgChatId}: not a command, mention or reply to the bot.`
       )
       return null
@@ -1291,7 +1296,7 @@ export class BridgeRuntime {
     const fromId = msg.from ? String(msg.from.id) : tgChatId
     const allowed = parseAllowedIds(this.config.allowedUserIds)
 
-    if (!isAllowed(allowed, fromId, tgChatId)) {
+    if (!isAllowed(this.config.restricted, allowed, fromId, tgChatId)) {
       // In 'all' mode a group's other members talk among themselves; only what they address to the
       // bot earns them the access-denied answer.
       if (group && !group.addressed) {
@@ -1402,7 +1407,7 @@ export class BridgeRuntime {
     const allowed = parseAllowedIds(this.config.allowedUserIds)
     const token = await this.readToken()
 
-    if (!isAllowed(allowed, fromId, tgChatId)) {
+    if (!isAllowed(this.config.restricted, allowed, fromId, tgChatId)) {
       await this.recordBlockedUser(fromId, tgChatId, `Blocked unauthorized Telegram callback from ${fromId}.`)
       if (token) {
         await this.safeAnswerCallbackQuery(token, cq.id, this.i18n.callbackUnauthorized, true)
@@ -1590,7 +1595,7 @@ export class BridgeRuntime {
       senderId,
       chatId: String(chat.id),
       isGroup: isGroupChat(chat),
-      openToEveryone: parseAllowedIds(this.config.allowedUserIds).size === 0
+      openToEveryone: !this.config.restricted
     })
   }
 
@@ -1686,7 +1691,7 @@ export class BridgeRuntime {
 
   // Panel entries for what a save changed: access, roles and the token, never the token itself.
   private async auditPanelSave(prev: BridgeConfig, prevToken: string | null): Promise<void> {
-    const access = accessChange(prev.allowedUserIds, this.config.allowedUserIds)
+    const access = accessChange(prev, this.config)
     if (access) await this.auditPanel('access', access)
     const roles = roleChanges(prev, this.config)
     if (roles) await this.auditPanel('roles', roles)
@@ -1806,7 +1811,7 @@ export class BridgeRuntime {
     const replyToBot =
       this.botUserId !== null && msg.reply_to_message?.from?.id === this.botUserId
     if ((mentioned || replyToBot) && !learning) return { text, addressed: true }
-    const readsAll = this.config.groupMode === 'all' && parseAllowedIds(this.config.allowedUserIds).size > 0
+    const readsAll = this.config.groupMode === 'all' && this.config.restricted
     return readsAll ? { text, addressed: false } : null
   }
 
@@ -2413,7 +2418,7 @@ export class BridgeRuntime {
     let attachmentCount = 0
     const failures: string[] = []
     // An open bridge answers anyone, so files from this computer go out only once it is restricted.
-    const localFilesAllowed = parseAllowedIds(this.config.allowedUserIds).size > 0
+    const localFilesAllowed = this.config.restricted
     const heldBack: string[] = []
     for (const attachment of attachments) {
       if (attachment.target.kind === 'file' && !localFilesAllowed) {
@@ -3176,7 +3181,7 @@ export class BridgeRuntime {
     if (this.commandsRegistered) return
     const key = menuKey(this.config)
     const { replyLanguage: setting, roles, roleAssignments } = this.config
-    const openToEveryone = parseAllowedIds(this.config.allowedUserIds).size === 0
+    const openToEveryone = !this.config.restricted
     const options = { proxyUrl: this.config.proxyUrl, timeoutMs: 10_000, signal }
     // Every language's menu is set each time, so leaving 'auto' replaces the per-language menus too.
     const menus: Array<[code: string | undefined, language: ReplyLanguage]> = [
@@ -3338,14 +3343,14 @@ export class BridgeRuntime {
     }
   }
 
-  // Outbound sync never runs while the allowlist is empty; say so once when that state begins.
+  // Outbound sync never runs while the bridge is open; say so once when that state begins.
   private async logSyncPausedWhileOpen(changed: string[]): Promise<void> {
-    if (!this.config.syncOrcaOutbound || parseAllowedIds(this.config.allowedUserIds).size > 0) return
-    if (!changed.includes('syncOrcaOutbound') && !changed.includes('allowedUserIds')) return
+    if (!this.config.syncOrcaOutbound || this.config.restricted) return
+    if (!changed.includes('syncOrcaOutbound') && !changed.includes('restricted')) return
     await this.appendLog(
       'info',
       'sync',
-      'Orca outbound sync is paused: the allowlist is empty, so the bridge is open to everyone. Add your Telegram ID to use sync.'
+      'Orca outbound sync is paused: the bridge is open to everyone. Choose Only these people and groups to use sync.'
     )
   }
 
@@ -3353,9 +3358,9 @@ export class BridgeRuntime {
     if (this.disposed || !this.config.syncOrcaOutbound || this.outboundSyncRunning) return
     const token = await this.readToken()
     if (!token) return
-    const allowed = parseAllowedIds(this.config.allowedUserIds)
     // Open mode lets anyone /bind an Orca chat; syncing would push the owner's Orca messages to them.
-    if (allowed.size === 0) return
+    if (!this.config.restricted) return
+    const allowed = parseAllowedIds(this.config.allowedUserIds)
 
     // Sync only to chats whose Telegram user (or group) is still on the allowlist, and to groups
     // only while groups are on and not learning (learning never posts in a group).
@@ -3802,7 +3807,7 @@ export class BridgeRuntime {
   // removed person a role would put them back on the list at the next save.
   private async seedFullAccessFromBindings(): Promise<void> {
     this.seedRolesFromBindings = false
-    if (parseAllowedIds(this.config.allowedUserIds).size === 0) {
+    if (!this.config.restricted) {
       const assignments = { ...this.config.roleAssignments }
       for (const b of this.bindings) {
         if (!/^\d+$/.test(b.tgChatId)) continue
