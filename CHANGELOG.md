@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/drecchia/orca-telegram-bridge/compare/v0.17.1...v0.17.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* count listed groups apart from people on the bridge card ([#25](https://github.com/drecchia/orca-telegram-bridge/issues/25)) ([9ca4687](https://github.com/drecchia/orca-telegram-bridge/commit/9ca4687b99e060322b8e76751e4592b4729d9125))
+
 ## [0.17.1](https://github.com/drecchia/orca-telegram-bridge/compare/v0.17.0...v0.17.1) (2026-11-26)
 
 
