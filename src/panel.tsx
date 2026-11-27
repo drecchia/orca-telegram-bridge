@@ -660,6 +660,25 @@ async function resetBinding(bridgeId: string, tgChatId: string): Promise<void> {
   }
 }
 
+async function sendLearnedNow(bridgeId: string): Promise<void> {
+  set(busy, true)
+  set(feedback, null)
+  try {
+    const res = await plugin.request('bridge.sendLearnedNow', { bridgeId })
+    set(bridgeState, res.state)
+    set(
+      feedback,
+      res.started
+        ? { tone: 'success', text: 'Sending what it learned to the Orca bot. The Logs tab shows when it is done.' }
+        : { tone: 'accent', text: 'Nothing to send: no group message saved since the last batch.' }
+    )
+  } catch (err) {
+    set(feedback, { tone: 'danger', text: errorText(err) })
+  } finally {
+    set(busy, false)
+  }
+}
+
 async function clearLogs(): Promise<void> {
   try {
     const next = await plugin.request('bridge.clearLogs')
@@ -1379,6 +1398,17 @@ function bridgeEditor(bridge: BridgeView, botName: string, isBusy: boolean, conf
                 The bridge saves each group's messages to a file and sends them to the Orca bot in one
                 turn every this many hours (1 to 168), in a new Orca chat each time.
               </Text>
+              {/* Only for the saved setup: the worker sends what learning mode saved, not this draft. */}
+              {bridge.config.allowGroups && bridge.config.groupMode === 'all' && bridge.config.groupReply === 'learn' && (
+                <Row gap="xs" align="center" wrap>
+                  <Button size="sm" variant="outline" disabled={isBusy} onPress={() => void sendLearnedNow(bridge.id)}>
+                    Send now
+                  </Button>
+                  <Text muted size="xs">
+                    Sends what it learned so far and restarts the count.
+                  </Text>
+                </Row>
+              )}
             </Stack>
           )}
           {followsAll && accessMode === 'open' && (

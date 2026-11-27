@@ -4102,6 +4102,56 @@ test("'all' + learn: while polling, a batch goes out once learnBatchHours have p
   }
 })
 
+test("'all' + learn: Send now sends the saved lines at once; with nothing saved it does nothing", async () => {
+  await withGroupBridge(LEARNING, async (controller, deps, manager, learnDir) => {
+    // Nothing saved yet: nothing starts.
+    assert.equal(await controller.sendLearnedNow(), false)
+    await controller.handleIncomingUpdate(groupUpdate(1, 777888, 'the deploy failed'))
+
+    assert.equal(await controller.sendLearnedNow(), true)
+    // A batch queues behind the one Send now started, so this waits for it.
+    await within(controller.flushLearningBatches(), 'batch')
+    assert.equal(deps.sentToBots.length, 1)
+    assert.ok(deps.sentToBots[0].body.includes(LEARN_LINE))
+    assert.ok(deps.sentToBots[0].body.endsWith('Member (777888): the deploy failed'))
+    assert.deepEqual(groupMessages(deps), [])
+    assert.deepEqual(await learnFiles(learnDir), {})
+    assert.ok(manager.getState().logs.some((e) => e.message === `[Assistant -> TG ${GROUP_ID}] Learning batch of 1 message(s) done: nothing sent to the group.`))
+
+    // Sent already: a second press has nothing to send.
+    assert.equal(await controller.sendLearnedNow(), false)
+    assert.equal(deps.sentToBots.length, 1)
+  })
+})
+
+test("'all' + learn: Send now during the timer's batch does not send the same lines twice", async () => {
+  await withGroupBridge(LEARNING, async (controller, deps) => {
+    await controller.handleIncomingUpdate(groupUpdate(1, 777888, 'once only'))
+    const timerBatch = controller.flushLearningBatches()
+    assert.equal(await controller.sendLearnedNow(), true)
+    await within(timerBatch, 'timer batch')
+    await within(controller.flushLearningBatches(), 'Send now batch')
+    assert.equal(deps.sentToBots.length, 1)
+  })
+})
+
+test('Send now does nothing while learning mode is off, even with saved lines', async () => {
+  for (const config of [
+    { ...LEARNING, groupReply: 'mentioned' },
+    { ...LEARNING, allowGroups: false }
+  ]) {
+    await withGroupBridge(config, async (controller, deps, _manager, learnDir) => {
+      // Lines saved while learning mode was on.
+      const dir = path.join(learnDir, '.orca-telegram-bridge', 'learning', 'b-group001')
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(path.join(dir, LEARN_FILE), '[2026-01-01T00:00:00.000Z] Member (777888): old line\n')
+      assert.equal(await controller.sendLearnedNow(), false)
+      await controller.flushLearningBatches()
+      assert.equal(deps.sentToBots.length, 1, 'the timer still sends them')
+    })
+  }
+})
+
 test("'all' + learn: a button on an older group message does nothing", async () => {
   await withGroupBridge(LEARNING, async (controller, deps) => {
     await controller.handleIncomingUpdate(buttonUpdate(1, 777888, GROUP_ID, 'n:new'))

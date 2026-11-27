@@ -1479,6 +1479,41 @@ test('one group choice says what the bot reads and when it answers, and Save map
   await view.unmount()
 })
 
+test('Send now shows under the learning interval only for a saved learning setup and says what happened', async () => {
+  const learning = { allowGroups: true, groupMode: 'all' as const, groupReply: 'learn' as const }
+  let state = makeState({ bridges: [makeBridge('b1', { config: learning })] })
+  const sent: string[] = []
+  let started = true
+  const host = panelHost({
+    requests: {
+      'bridge.getState': () => state,
+      'bridge.sendLearnedNow': (input: { bridgeId: string }) => {
+        sent.push(input.bridgeId)
+        return { started, state }
+      }
+    }
+  })
+  const view = await mount(panel, { host })
+  await openEditor(view, 'b1')
+  await view.press({ text: 'Send now' })
+  assert.deepEqual(sent, ['b1'])
+  assert.ok(view.find({ text: 'Sending what it learned to the Orca bot. The Logs tab shows when it is done.' }))
+  started = false
+  await view.press({ text: 'Send now' })
+  assert.ok(view.find({ text: 'Nothing to send: no group message saved since the last batch.' }))
+
+  // Picked in the editor but not saved yet: nothing is saved to send.
+  state = makeState({ bridges: [makeBridge('b1', { config: { ...learning, groupReply: 'mentioned' } })] })
+  await view.unmount()
+  const other = await mount(panel, { host })
+  await openEditor(other, 'b1')
+  await other.select({ label: 'In groups' }, 'all-learn')
+  assert.ok(other.find({ label: 'Send what it learned every (hours)' }))
+  assert.equal(other.find({ text: 'Send now' }), null)
+  assert.deepEqual(other.errors, [])
+  await other.unmount()
+})
+
 test('each bridge card says how it reads groups', async () => {
   // One bridge per Orca bot, so each bot's view shows one of the group setups.
   const setups: Array<{ bot: string; config: Partial<BridgeConfig>; summary: string }> = [
