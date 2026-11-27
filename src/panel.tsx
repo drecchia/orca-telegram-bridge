@@ -854,8 +854,12 @@ function roleCounts(config: BridgeConfig, ids: string[]): string {
 function peopleSummary(bridge: BridgeView, openToEveryone: boolean): string {
   const { config } = bridge
   if (!openToEveryone) {
+    // Group chat IDs are negative: count them apart from people.
     const ids = telegramIds(config.allowedUserIds)
-    return ids.length > 0 ? `People: ${ids.length} (${roleCounts(config, ids)})` : 'People: none yet'
+    const people = ids.filter((id) => !id.startsWith('-'))
+    const groups = ids.filter((id) => id.startsWith('-'))
+    const line = people.length > 0 ? `People: ${people.length} (${roleCounts(config, people)})` : 'People: none yet'
+    return groups.length > 0 ? `${line}, groups: ${groups.length} (${roleCounts(config, groups)})` : line
   }
   const ids = Object.keys(config.roleAssignments)
   return ids.length > 0
