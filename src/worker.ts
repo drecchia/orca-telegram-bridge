@@ -858,6 +858,8 @@ export class BridgeRuntime {
   // an append and a file's move to a batch from overlapping.
   private learnBatchAt = 0
   private learnFiles: Promise<void> = Promise.resolve()
+  // One batch at a time: the panel's Send now and the timer's batch never send the same files twice.
+  private learnBatches: Promise<void> = Promise.resolve()
   private readonly chatQueues = new Map<string, Promise<void>>()
   private readonly activeTelegramTgChats = new Set<string>()
   private readonly activeTelegramOrcaChats = new Set<string>()
@@ -1952,19 +1954,48 @@ export class BridgeRuntime {
       await sleep(checkMs, abort.signal)
       if (abort.signal.aborted || this.disposed) break
       if ((this.deps.now ?? Date.now)() - this.learnBatchAt < this.config.learnBatchHours * 3_600_000) continue
-      try {
-        await this.flushLearningBatches(abort.signal)
-      } catch (err) {
-        if (abort.signal.aborted || this.disposed) break
-        const message = err instanceof Error ? err.message : String(err)
-        await this.appendLog('warn', 'bridge', `Learning batch failed: ${message}`, describeError(err))
-        this.emitState()
-      }
+      await this.runLearnBatch(abort.signal)
     }
+  }
+
+  private async runLearnBatch(signal?: AbortSignal): Promise<void> {
+    try {
+      await this.flushLearningBatches(signal)
+    } catch (err) {
+      if (signal?.aborted || this.disposed) return
+      const message = err instanceof Error ? err.message : String(err)
+      await this.appendLog('warn', 'bridge', `Learning batch failed: ${message}`, describeError(err))
+      this.emitState()
+    }
+  }
+
+  // The panel's Send now: while learning mode is on and a group has saved lines, starts the batch
+  // the timer would send (which also restarts the timer) and returns true at once; a batch can take
+  // longer than a panel request may wait. Its end goes to the logs. Else does nothing, false.
+  async sendLearnedNow(): Promise<boolean> {
+    if (!this.config.allowGroups || !this.learnsInGroups()) return false
+    const dir = this.learnDir()
+    const names = await fs.readdir(dir).catch(() => [] as string[])
+    const sizes = await Promise.all(
+      names.filter((n) => /^-?\d+\./.test(n)).map((n) => fs.stat(path.join(dir, n)).then((s) => s.size, () => 0))
+    )
+    if (!sizes.some((size) => size > 0)) return false
+    await this.appendLog('info', 'bridge', 'Send now pressed: sending what learning mode saved.')
+    void this.runLearnBatch(this.pollAbort?.signal)
+    return true
   }
 
   // Sends each group's saved lines to the Orca bot in one message. A group with no lines is skipped.
   async flushLearningBatches(signal?: AbortSignal): Promise<void> {
+    const run = this.learnBatches.then(() => this.sendLearningBatches(signal))
+    this.learnBatches = run.then(
+      () => {},
+      () => {}
+    )
+    return run
+  }
+
+  private async sendLearningBatches(signal?: AbortSignal): Promise<void> {
     this.learnBatchAt = (this.deps.now ?? Date.now)()
     await this.orca.storage.set(this.key('learnBatchAt'), this.learnBatchAt)
     let names: string[]
@@ -5102,6 +5133,10 @@ export async function activateWithDeps(orca: OrcaWorkerApi, deps: BridgeDeps): P
   orca.panels.handle('bridge.resetBinding', async ({ bridgeId, tgChatId }) => {
     await manager.bridge(bridgeId).resetBinding(tgChatId)
     return state()
+  })
+  orca.panels.handle('bridge.sendLearnedNow', async ({ bridgeId }) => {
+    const started = await manager.bridge(bridgeId).sendLearnedNow()
+    return { started, state: state() }
   })
   orca.panels.handle('bridge.clearLogs', async () => {
     await manager.clearLogs()

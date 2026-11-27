@@ -245,6 +245,9 @@ declare module 'orca' {
     'bridge.setEnabled': { input: { bridgeId: string; enabled: boolean }; output: BridgeState }
     'bridge.allowUserId': { input: { bridgeId: string; userId: string }; output: BridgeState }
     'bridge.resetBinding': { input: { bridgeId: string; tgChatId: string }; output: BridgeState }
+    // Learning mode: sends the groups' saved lines now. `started` is false while learning mode is off
+    // or nothing is saved; the batch itself runs on after the answer.
+    'bridge.sendLearnedNow': { input: { bridgeId: string }; output: { started: boolean; state: BridgeState } }
     'bridge.clearLogs': { output: BridgeState }
     'bridge.setDebugLogging': { input: { enabled: boolean }; output: BridgeState }
     'bridge.exportLogs': { output: ExportLogsResult }
