@@ -1862,6 +1862,23 @@ test('each bridge card says who can talk and with which role', async () => {
   assert.ok(view.find({ text: 'People: 3 (Full access 1, Member 2)' }))
   await view.unmount()
 
+  // Negative IDs are groups, not people
+  const withGroups = makeState({
+    bridges: [
+      makeBridge('b1', {
+        config: { allowedUserIds: '1, -1003904491956, -5405574125', roleAssignments: { '-5405574125': 'full' } }
+      })
+    ]
+  })
+  view = await mount(panel, { host: panelHost({ requests: { 'bridge.getState': () => withGroups } }) })
+  assert.ok(view.find({ text: 'People: 1 (Member 1), groups: 2 (Full access 1, Member 1)' }))
+  await view.unmount()
+
+  const onlyGroups = makeState({ bridges: [makeBridge('b1', { config: { allowedUserIds: '-100123' } })] })
+  view = await mount(panel, { host: panelHost({ requests: { 'bridge.getState': () => onlyGroups } }) })
+  assert.ok(view.find({ text: 'People: none yet, groups: 1 (Member 1)' }))
+  await view.unmount()
+
   const open = makeState({ bridges: [makeBridge('b1', { config: { allowedUserIds: '' } })] })
   view = await mount(panel, { host: panelHost({ requests: { 'bridge.getState': () => open } }) })
   assert.ok(view.find({ text: 'Anyone on Telegram (Stranger)' }))
